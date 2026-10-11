@@ -24,7 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # The fields worth a glance per event; --full shows everything.
 BRIEF = {
     "service_call": ("service", "args", "exit_code", "duration_ms", "error"),
-    "search_query": ("keywords", "geo", "page", "results"),
+    "search_query": ("keywords", "geo", "page", "results", "new"),
+    "posting_skipped": ("id", "title", "reason"),
     "match_decision": ("id", "title", "company", "decision", "reasons", "score"),
     "ingest_result": ("added", "skipped", "expired"),
     "apply_step": ("application_id", "step", "status", "note"),

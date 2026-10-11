@@ -22,3 +22,6 @@ __pycache__/
 
 .claude/settings.local.json
 .DS_Store
+
+# Personal search criteria (comp floor, locations); criteria.example.json is the template
+criteria.json

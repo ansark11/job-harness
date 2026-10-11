@@ -1,0 +1,25 @@
+{
+  "_comment": "Copy to criteria.json (gitignored) and edit. Passed by path to job-search and matcher.",
+  "search": {
+    "keywords": [
+      "Senior Product Manager",
+      "Principal Product Manager"
+    ],
+    "locations": [
+      "Toronto, Ontario, Canada",
+      "United States"
+    ],
+    "work_types": [
+      "remote",
+      "hybrid"
+    ],
+    "job_types": [
+      "full-time",
+      "contract"
+    ],
+    "title_include": "product manag|product lead|head of product",
+    "title_exclude": "marketing|product owner|associate product manager|\\bAPM\\b|analyst|junior|\\bjr\\b|intern|project manager|program manager|engineer|designer|sales",
+    "max_pages": 5,
+    "max_age_days": 30
+  }
+}
