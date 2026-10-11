@@ -21,5 +21,77 @@
     "title_exclude": "marketing|product owner|associate product manager|\\bAPM\\b|analyst|junior|\\bjr\\b|intern|project manager|program manager|engineer|designer|sales",
     "max_pages": 5,
     "max_age_days": 30
+  },
+  "match": {
+    "title_seniority": "\\b(senior|sr\\.?|principal|lead|staff|group|director|head of)\\b",
+    "countries": [
+      "CA",
+      "US"
+    ],
+    "canada_metros": [
+      "Toronto",
+      "Mississauga",
+      "Markham",
+      "Vaughan",
+      "Brampton",
+      "Oakville",
+      "Richmond Hill",
+      "Greater Toronto",
+      "Vancouver",
+      "Burnaby",
+      "Richmond, British Columbia",
+      "Surrey",
+      "Coquitlam"
+    ],
+    "contract_min_months": 12,
+    "max_age_days": 30,
+    "comp": {
+      "min_total_cad": 150000,
+      "tolerance": 0.05,
+      "fx_to_cad": {
+        "CAD": 1.0,
+        "USD": 1.38
+      },
+      "hours_per_year": 2080
+    },
+    "industries": [
+      "fintech_payments",
+      "big_tech",
+      "health_tech",
+      "ecommerce_platform"
+    ],
+    "big_tech_companies": [
+      "Google",
+      "Alphabet",
+      "Amazon",
+      "Amazon Web Services (AWS)",
+      "Microsoft",
+      "Meta",
+      "Apple",
+      "Netflix",
+      "Salesforce",
+      "Uber",
+      "Airbnb",
+      "LinkedIn",
+      "Oracle",
+      "Adobe",
+      "NVIDIA",
+      "Intuit",
+      "OpenAI",
+      "Anthropic"
+    ],
+    "excluded_linkedin_industries": [
+      "Retail",
+      "Retail Groceries",
+      "Retail Apparel and Fashion",
+      "Retail Luxury Goods and Jewelry",
+      "Retail Health and Personal Care Products",
+      "Consumer Goods",
+      "Food and Beverage Manufacturing",
+      "Beverage Manufacturing",
+      "Personal Care Product Manufacturing",
+      "Food and Beverage Retail",
+      "Tobacco Manufacturing"
+    ]
   }
 }
