@@ -1,0 +1,24 @@
+# Each service has its own .gitignore for its data, logs, venv and .env.
+# These root rules are a second net: a new service that forgets its own
+# .gitignore still can't commit resumes, answers, sessions or secrets.
+**/.env
+**/.env.*
+!**/.env.example
+services/*/data/*
+!services/*/data/.gitkeep
+services/*/data/browser-profile/
+services/*/logs/*
+!services/*/logs/.gitkeep
+workflows/*/logs/
+workflows/*/data/
+services/*/python/
+**/.venv/
+**/venv/
+node_modules/
+dist/
+
+__pycache__/
+*.pyc
+
+.claude/settings.local.json
+.DS_Store
