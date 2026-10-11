@@ -37,6 +37,7 @@ OpenAI Responses API, model `gpt-6-luna`, called with stdlib `urllib` (same
 pattern as finance-harness `card-offers/discover.py`). Every function that
 calls the model takes an injectable `post` so tests use canned replies.
 `OPENAI_API_KEY` lives in each LLM-using service's `.env` (gitignored).
+The client is `llm.py`, copied from `scripts/llm.py`.
 
 ## Logging
 
@@ -52,8 +53,9 @@ Every CLI entry point writes structured JSON-lines records through
   with and where the value came from. Fingerprint inputs with `runlog.digest()`.
 - **Never log secrets.** `runlog.redact()` masks credential keys, session
   cookies (`li_at`, `JSESSIONID`) and OpenAI-key-shaped values.
-- **`scripts/runlog.py` is the master.** Copy it identically into each
-  component; `scripts/test.sh` fails if a copy drifts.
+- **`scripts/runlog.py` and `scripts/llm.py` are masters.** Copy them
+  identically into each component that uses them; `scripts/test.sh` fails
+  if a copy drifts.
 - **Tests must never write the real logs.** Each `tests/__init__.py` sets
   `HARNESS_LOG_DIR` to a temp dir, so run suites as packages (`-t .`).
 

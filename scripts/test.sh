@@ -27,15 +27,18 @@ if ! python3 -m unittest discover -s scripts/tests -t scripts; then
   status=1
 fi
 
-echo "== runlog.py copies"
-# Services don't import each other, so the structured logger is copied into
-# each component. The copies must stay identical to scripts/runlog.py.
-for copy in services/*/runlog.py workflows/*/runlog.py; do
-  [ -e "$copy" ] || continue
-  if ! cmp -s scripts/runlog.py "$copy"; then
-    echo "!! $copy differs from scripts/runlog.py"
-    status=1
-  fi
+echo "== shared module copies"
+# Services don't import each other, so shared modules (the structured
+# logger, the model client) are copied into each component that uses them.
+# Every copy must stay identical to its master in scripts/.
+for name in runlog.py llm.py; do
+  for copy in services/*/"$name" workflows/*/"$name"; do
+    [ -e "$copy" ] || continue
+    if ! cmp -s "scripts/$name" "$copy"; then
+      echo "!! $copy differs from scripts/$name"
+      status=1
+    fi
+  done
 done
 
 [ $status -eq 0 ] && echo "== all suites passed"

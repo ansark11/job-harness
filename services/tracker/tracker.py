@@ -1,18 +1,39 @@
 #!/usr/bin/env python3
 """Tracker CLI: every command prints JSON.
 
-    python3 tracker.py ingest matches.json [--run-id ID]
-    python3 tracker.py list [--status new|kept|discarded|expired] [--group-by fetch-date]
-    python3 tracker.py show <id>
-    python3 tracker.py keep <id> [<id> ...]
-    python3 tracker.py discard <id> [<id> ...]
-    python3 tracker.py expire
-    python3 tracker.py run start --kind daily_search
-    python3 tracker.py run finish <run id> --status ok|failed [--stats JSON]
-    python3 tracker.py run last-success --kind daily_search
+Opportunities and runs
+    tracker.py ingest matches.json [--run-id ID]
+    tracker.py list [--status new|kept|discarded|expired] [--group-by fetch-date]
+    tracker.py show <id>
+    tracker.py keep|discard <id> [<id> ...]
+    tracker.py expire
+    tracker.py run start --kind K | finish <run id> --status ok|failed [--stats JSON] | last-success --kind K
+
+Resumes
+    tracker.py resume add <file> [--name NAME] [--default]
+    tracker.py resume list | show <id> [--text] | default [<id>]
+
+Answer bank (reusable answers to application questions)
+    tracker.py bank onboard                     # interactive: answer the standard questions once
+    tracker.py bank list [--group G] [--unanswered]
+    tracker.py bank show <key> | set <key> <answer> [--always-ask | --auto]
+    tracker.py bank keys                        # keys + wording only (safe to give the model)
+    tracker.py bank resolve "<question>"
+
+Inbox (questions an application asked that the bank couldn't answer)
+    tracker.py inbox list [--status open|answered|dismissed|all]
+    tracker.py inbox add --question Q [--field-type T] [--options JSON] [--jurisdiction CA|US] [--application ID]
+    tracker.py inbox propose <id> --key K --confidence C [--reason R]
+    tracker.py inbox resolve <id> --key K [--answer A]     # same question as an existing key
+    tracker.py inbox answer <id> --answer A [--key K] [--sensitive]   # a new question
+    tracker.py inbox dismiss <id>
+
+Approved long-form answers
+    tracker.py answers add --question Q --answer A [--job-id ID] [--company C]
+    tracker.py answers list | similar --question Q [--limit N]
 
 The database is data/jobs.db (TRACKER_DB overrides it). Exit 1 on a bad
-request (unknown id, disallowed status change), with {"error": ...}.
+request, with {"error": ...}.
 """
 
 import argparse
@@ -20,7 +41,9 @@ import json
 import sys
 from pathlib import Path
 
+import bank
 import db
+import resumes
 import runlog
 import store
 
@@ -34,34 +57,100 @@ def build_parser():
     p = sub.add_parser("ingest", help="add matcher output")
     p.add_argument("matches", help="matcher output JSON ('-' for stdin)")
     p.add_argument("--run-id")
-
     p = sub.add_parser("list")
     p.add_argument("--status", choices=["new", "kept", "discarded", "expired"])
     p.add_argument("--group-by", choices=["fetch-date"])
-
     p = sub.add_parser("show")
     p.add_argument("id")
-
     for name in ("keep", "discard"):
         p = sub.add_parser(name)
         p.add_argument("ids", nargs="+")
-
     sub.add_parser("expire", help=f"expire postings unreviewed for {store.EXPIRE_DAYS} days")
 
     p = sub.add_parser("run", help="record daily runs")
-    rsub = p.add_subparsers(dest="run_cmd", required=True)
-    r = rsub.add_parser("start")
+    s = p.add_subparsers(dest="sub", required=True)
+    r = s.add_parser("start")
     r.add_argument("--kind", required=True)
-    r = rsub.add_parser("finish")
+    r = s.add_parser("finish")
     r.add_argument("id")
     r.add_argument("--status", required=True, choices=["ok", "failed"])
     r.add_argument("--stats", default="{}")
-    r = rsub.add_parser("last-success")
+    r = s.add_parser("last-success")
     r.add_argument("--kind", required=True)
+
+    p = sub.add_parser("resume")
+    s = p.add_subparsers(dest="sub", required=True)
+    r = s.add_parser("add")
+    r.add_argument("file")
+    r.add_argument("--name")
+    r.add_argument("--default", action="store_true")
+    s.add_parser("list")
+    r = s.add_parser("show")
+    r.add_argument("id")
+    r.add_argument("--text", action="store_true")
+    r = s.add_parser("default")
+    r.add_argument("id", nargs="?")
+
+    p = sub.add_parser("bank")
+    s = p.add_subparsers(dest="sub", required=True)
+    s.add_parser("onboard")
+    r = s.add_parser("list")
+    r.add_argument("--group")
+    r.add_argument("--unanswered", action="store_true")
+    r = s.add_parser("show")
+    r.add_argument("key")
+    r = s.add_parser("set")
+    r.add_argument("key")
+    r.add_argument("answer")
+    g = r.add_mutually_exclusive_group()
+    g.add_argument("--always-ask", dest="always_ask", action="store_true", default=None)
+    g.add_argument("--auto", dest="always_ask", action="store_false")
+    s.add_parser("keys")
+    r = s.add_parser("resolve")
+    r.add_argument("question")
+
+    p = sub.add_parser("inbox")
+    s = p.add_subparsers(dest="sub", required=True)
+    r = s.add_parser("list")
+    r.add_argument("--status", default="open", choices=["open", "answered", "dismissed", "all"])
+    r = s.add_parser("add")
+    r.add_argument("--question", required=True)
+    r.add_argument("--field-type")
+    r.add_argument("--options", help="JSON list")
+    r.add_argument("--jurisdiction", choices=["CA", "US"])
+    r.add_argument("--application")
+    r = s.add_parser("propose")
+    r.add_argument("id", type=int)
+    r.add_argument("--key", required=True, help="'none' if no key fits")
+    r.add_argument("--confidence", type=float, required=True)
+    r.add_argument("--reason")
+    r = s.add_parser("resolve")
+    r.add_argument("id", type=int)
+    r.add_argument("--key", required=True)
+    r.add_argument("--answer")
+    r = s.add_parser("answer")
+    r.add_argument("id", type=int)
+    r.add_argument("--answer", required=True)
+    r.add_argument("--key")
+    r.add_argument("--sensitive", action="store_true")
+    r = s.add_parser("dismiss")
+    r.add_argument("id", type=int)
+
+    p = sub.add_parser("answers")
+    s = p.add_subparsers(dest="sub", required=True)
+    r = s.add_parser("add")
+    r.add_argument("--question", required=True)
+    r.add_argument("--answer", required=True)
+    r.add_argument("--job-id")
+    r.add_argument("--company")
+    s.add_parser("list")
+    r = s.add_parser("similar")
+    r.add_argument("--question", required=True)
+    r.add_argument("--limit", type=int, default=3)
     return ap
 
 
-def dispatch(conn, args, run):
+def cmd_opportunities(conn, args, run):
     if args.cmd == "ingest":
         text = sys.stdin.read() if args.matches == "-" else Path(args.matches).read_text()
         data = json.loads(text)
@@ -84,21 +173,129 @@ def dispatch(conn, args, run):
         ids = store.expire(conn)
         run.event("expired", count=len(ids), ids=ids)
         return {"expired": ids}
-    if args.cmd == "run":
-        if args.run_cmd == "start":
-            return store.run_start(conn, args.kind)
-        if args.run_cmd == "finish":
-            return store.run_finish(conn, args.id, args.status, json.loads(args.stats))
-        return {"last_success": store.last_success(conn, args.kind)}
-    raise AssertionError(args.cmd)
+    if args.sub == "start":
+        return store.run_start(conn, args.kind)
+    if args.sub == "finish":
+        return store.run_finish(conn, args.id, args.status, json.loads(args.stats))
+    return {"last_success": store.last_success(conn, args.kind)}
+
+
+def cmd_resume(conn, args, run):
+    if args.sub == "add":
+        rec = resumes.add(conn, args.file, args.name, args.default)
+        run.event("resume_added", id=rec["id"], resume_name=rec["name"], characters=rec.get("characters"),
+                  already_added=rec.get("already_added", False))
+        return rec
+    if args.sub == "list":
+        return {"resumes": resumes.list_all(conn)}
+    if args.sub == "show":
+        rec = resumes.get(conn, args.id)
+        return {**rec, "text": Path(rec["text_path"]).read_text()} if args.text else rec
+    return resumes.set_default(conn, args.id) if args.id else resumes.default(conn)
+
+
+def onboard(conn, ask=input, say=lambda s: print(s, file=sys.stderr)):
+    """Walk the unanswered standard questions. Enter skips, q stops. Prompts go to stderr."""
+    answered, skipped = [], []
+    say("Answer each question once; it's reused on every application. Enter = skip, q = stop.\n"
+        "Self-identification answers stay on this machine and are never sent to the model.")
+    group = None
+    for e in bank.list_entries(conn, unanswered=True):
+        if e["always_ask"]:
+            continue
+        if e["group"] != group:
+            group = e["group"]
+            say(f"\n== {group.replace('_', ' ')}")
+        say(f"\n{e['question']}" + (f"   [{e['jurisdiction']} applications]" if e["jurisdiction"] != "any" else ""))
+        if e["options"]:
+            for i, o in enumerate(e["options"], 1):
+                say(f"  {i}. {o}")
+        raw = ask("> ").strip()
+        if raw.lower() == "q":
+            break
+        if not raw:
+            skipped.append(e["key"])
+            continue
+        if e["options"] and raw.isdigit() and 1 <= int(raw) <= len(e["options"]):
+            raw = e["options"][int(raw) - 1]
+        bank.set_answer(conn, e["key"], raw)
+        answered.append(e["key"])
+    remaining = [e["key"] for e in bank.list_entries(conn, unanswered=True)]
+    return {"answered": answered, "skipped": skipped, "still_unanswered": remaining}
+
+
+def cmd_bank(conn, args, run):
+    if args.sub == "onboard":
+        out = onboard(conn)
+        run.event("bank_onboard", answered=len(out["answered"]), unanswered=len(out["still_unanswered"]))
+        return out
+    if args.sub == "list":
+        return {"entries": bank.list_entries(conn, args.group, args.unanswered)}
+    if args.sub == "show":
+        return bank.get(conn, args.key)
+    if args.sub == "set":
+        entry = bank.set_answer(conn, args.key, args.answer, args.always_ask)
+        run.event("bank_set", key=args.key, sensitive=entry["sensitive"])     # never the answer itself
+        return entry
+    if args.sub == "keys":
+        return {"keys": bank.keys(conn)}
+    out = bank.resolve(conn, args.question)
+    run.event("bank_resolve", question=args.question, status=out["status"], key=out.get("key"), via=out.get("via"))
+    return out
+
+
+def cmd_inbox(conn, args, run):
+    if args.sub == "list":
+        return {"items": bank.inbox_list(conn, None if args.status == "all" else args.status)}
+    if args.sub == "add":
+        item = bank.inbox_add(conn, args.question, args.field_type, json.loads(args.options) if args.options else None,
+                              args.jurisdiction, args.application)
+        run.event("inbox_add", id=item["id"], question=args.question, duplicate=item.get("duplicate", False))
+        return item
+    if args.sub == "propose":
+        key = None if args.key == "none" else args.key
+        return bank.inbox_propose(conn, args.id, key, args.confidence, args.reason)
+    if args.sub == "resolve":
+        out = bank.inbox_resolve(conn, args.id, args.key, args.answer)
+        run.event("inbox_resolved", id=args.id, key=args.key, how="alias")
+        return out
+    if args.sub == "answer":
+        out = bank.inbox_answer(conn, args.id, args.answer, args.key, args.sensitive)
+        run.event("inbox_resolved", id=args.id, key=out["entry"]["key"], how="new key")
+        return out
+    return bank.inbox_dismiss(conn, args.id)
+
+
+def cmd_answers(conn, args, run):
+    if args.sub == "add":
+        return bank.approved_add(conn, args.question, args.answer, args.job_id, args.company)
+    if args.sub == "list":
+        return {"answers": bank.approved_list(conn)}
+    return {"similar": bank.approved_similar(conn, args.question, args.limit)}
+
+
+HANDLERS = {"resume": cmd_resume, "bank": cmd_bank, "inbox": cmd_inbox, "answers": cmd_answers}
+
+
+def loggable_argv(argv):
+    """argv with answers masked: the run log records the command line, and
+    bank answers include self-identification."""
+    out = list(argv)
+    if out[:2] == ["bank", "set"] and len(out) > 3:
+        out[3] = "[answer]"
+    for i, a in enumerate(out[:-1]):
+        if a == "--answer":
+            out[i + 1] = "[answer]"
+    return out
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
     args = build_parser().parse_args(argv)
-    with runlog.start("tracker", HERE, argv) as run:
+    with runlog.start("tracker", HERE, loggable_argv(argv)) as run:
         conn = db.connect()
         try:
-            out, code = dispatch(conn, args, run), 0
+            out, code = HANDLERS.get(args.cmd, cmd_opportunities)(conn, args, run), 0
         except store.TrackerError as e:
             out, code = {"error": str(e)}, 1
             run.warn("bad_request", error=str(e))

@@ -1,6 +1,7 @@
 """OpenAI Responses API calls with structured (JSON schema) output.
 
-Same pattern as finance-harness card-offers/discover.py: stdlib urllib, key
+IDENTICAL COPIES live in every service that calls the model; the master is
+scripts/llm.py (scripts/test.sh fails if a copy drifts). Same pattern as finance-harness card-offers/discover.py: stdlib urllib, key
 from the environment or this service's .env, and an injectable `post` so
 tests run on canned replies and never reach the network.
 """
