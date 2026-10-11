@@ -171,7 +171,10 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     with runlog.start("job-search", HERE, argv) as run:
-        cfg = json.loads(Path(args.criteria).read_text())["search"]
+        criteria = json.loads(Path(args.criteria).read_text())
+        if "search" not in criteria:
+            sys.exit(f"{args.criteria} has no 'search' section (see criteria.example.json)")
+        cfg = criteria["search"]
         now = datetime.now(timezone.utc)
         since = datetime.fromisoformat(args.since) if args.since else None
         if since and since.tzinfo is None:

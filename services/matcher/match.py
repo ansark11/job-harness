@@ -147,6 +147,8 @@ def main(argv=None, post=None):
         data = json.loads(Path(args.postings).read_text())
         postings = data["postings"] if isinstance(data, dict) else data
         criteria = json.loads(Path(args.criteria).read_text())
+        if "match" not in criteria:
+            sys.exit(f"{args.criteria} has no 'match' section (see criteria.example.json)")
         cfg = criteria["match"]
         resume = Path(args.resume).read_text()
         now = datetime.now(timezone.utc)
