@@ -144,6 +144,10 @@ MIGRATIONS = [
         PRIMARY KEY (application_id, key)
     );
     """,
+    # 4: the company portal an external application goes through, once resolved
+    """
+    ALTER TABLE applications ADD COLUMN apply_url TEXT;
+    """,
 ]
 
 

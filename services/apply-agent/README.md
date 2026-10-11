@@ -31,6 +31,30 @@ Statuses: `submitted`, `ready` (reached review, didn't submit),
 `needs_input`, `already_applied`, `not_easy_apply`, `login_required`,
 `cap_reached`, `error`. Screenshots of each page go to `data/screens/`.
 
+## Company portals (`portals.py`)
+
+For postings that apply on the company's site:
+
+- **Finding the form:** clicks LinkedIn's Apply button (signed in) and
+  follows the tab it opens; follows an iframe that embeds a Greenhouse,
+  Lever or Ashby form; goes to Lever's `/apply` and Ashby's `/application`
+  pages; otherwise clicks the page's "Apply" link. The resolved URL is
+  reported so later runs go straight there.
+- **Filling:** the same engine as Easy Apply on one long page, plus
+  yes/no button groups (Ashby) and searchable dropdowns that only accept a
+  listed option (picks the listed option matching the answer).
+- **Approval:** `--mode fill` fills everything and reports `ready` with a
+  full-page screenshot, without submitting. `--mode submit` refills from the
+  same answers, submits, and waits for the portal's confirmation (up to 3
+  minutes when headed, so you can solve a CAPTCHA).
+- **Left to you (`needs_user`):** Workday, iCIMS and Taleo (they need an
+  account you create), and a CAPTCHA that wasn't solved.
+
+Choice answers match the form's own wording where unambiguous ("No" →
+"No, I will not require sponsorship"), and any decline-to-answer wording
+matches the form's decline option ("I don't wish to answer" → "Decline To
+Self Identify").
+
 ## Data (gitignored)
 
 `data/browser-profile/` your LinkedIn session · `data/submissions.jsonl`
@@ -45,6 +69,7 @@ remove it.
 
 ## Tests
 
-Run headless Chromium against `tests/fixtures/easy_apply.html`, a stand-in
-page with the same roles and step structure as Easy Apply (no LinkedIn
-markup, no network): `./python/bin/python -m unittest discover -s tests -t .`
+Run headless Chromium against stand-in pages in `tests/fixtures/` (an Easy
+Apply dialog; a job page whose Apply opens a careers page embedding a
+Greenhouse-style form; an Ashby-style form). No real site markup, no
+network: `./python/bin/python -m unittest discover -s tests -t .`

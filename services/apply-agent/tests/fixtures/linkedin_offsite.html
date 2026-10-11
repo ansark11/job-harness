@@ -1,0 +1,11 @@
+<!doctype html>
+<!-- Stand-in LinkedIn job page whose Apply button opens the company's portal in a new tab. -->
+<html><head><meta charset="utf-8"><title>Senior PM - Portal Co</title></head>
+<body>
+<h1>Senior Product Manager</h1>
+<button id="apply" aria-label="Apply to Senior Product Manager on company website">Apply</button>
+<script>
+  document.getElementById('apply').onclick = () =>
+    window.open(new URL('careers_embed.html', location.href).href, '_blank');
+</script>
+</body></html>

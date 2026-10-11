@@ -106,6 +106,38 @@ EXTRACT_JS = r"""
 }
 """
 
+BUTTON_CHOICES_JS = r"""
+(rootSelector) => {
+  // Yes/No style questions rendered as a small group of buttons under a label (Ashby and others).
+  const scope = rootSelector ? document.querySelector(rootSelector) : document;
+  if (!scope) return [];
+  const clean = s => (s || '').replace(/\s+/g, ' ').trim();
+  const next = () => 'jh-' + (window.__jhSeq = (window.__jhSeq || 0) + 1);
+  const out = [], seen = new Set();
+  for (const b of scope.querySelectorAll('button[type=button]')) {
+    const box = b.parentElement;
+    if (!box || seen.has(box)) continue;
+    const buttons = [...box.children].filter(c => c.tagName === 'BUTTON');
+    if (buttons.length < 2 || buttons.length > 4 || buttons.some(x => clean(x.innerText).length > 30)) continue;
+    if (box.getClientRects().length === 0) continue;
+    seen.add(box);
+    let lab = null;
+    for (let n = box; n && n !== scope && !lab; n = n.parentElement) {
+      lab = n.querySelector(':scope > label') || (n.previousElementSibling && n.previousElementSibling.tagName === 'LABEL'
+            ? n.previousElementSibling : null);
+    }
+    if (!lab) continue;
+    const id = next();
+    buttons.forEach((x, i) => x.setAttribute('data-jh-id', `${id}-${i}`));
+    const label = clean(lab.innerText);
+    const pressed = buttons.find(x => x.getAttribute('aria-pressed') === 'true' || /selected|active/i.test(x.className));
+    out.push({id, type: 'button_choice', label, options: buttons.map(x => clean(x.innerText)),
+              required: /\*\s*$/.test(label), value: pressed ? clean(pressed.innerText) : null});
+  }
+  return out;
+}
+"""
+
 REQUIRED_MARK = re.compile(r"\s*(\*|\(required\)|required)\s*$", re.I)
 
 
@@ -128,7 +160,7 @@ def clean_label(label):
 
 
 def extract_fields(page, root=None):
-    fields = page.evaluate(EXTRACT_JS, root)
+    fields = page.evaluate(EXTRACT_JS, root) + page.evaluate(BUTTON_CHOICES_JS, root)
     for f in fields:
         f["label"] = clean_label(f["label"])
         f["key"] = normalize(f["label"])
@@ -136,10 +168,20 @@ def extract_fields(page, root=None):
     return fields
 
 
+# Self-identification forms word "decline" differently; any of these means the same answer.
+DECLINE = re.compile(r"\b(decline|prefer not|don.?t wish|do not wish|not wish to|rather not|choose not|"
+                     r"do not want|don.?t want|not to (say|answer|disclose|identify))", re.I)
+
+
 def match_option(value, options):
-    """The single option meaning `value`, or None. Exact, then prefix, then whole-word containment."""
+    """The single option meaning `value`, or None. Exact, then prefix, then whole-word
+    containment; a decline-to-answer value matches the form's own decline option."""
     if value is None or not options:
         return None
+    if DECLINE.search(str(value)):
+        declines = [o for o in options if DECLINE.search(o or "")]
+        if len(declines) == 1:
+            return declines[0]
     v = normalize(str(value))
     norm = [normalize(o) for o in options]
     exact = [o for o, n in zip(options, norm) if n == v]
@@ -176,6 +218,12 @@ def fill_field(page, field, value, pause=0.0):
             page.locator(f'[data-jh-id="{field["id"]}-{i}"]').check(force=True)
         chosen = [match_option(w, field["options"]) for w in wanted]
         return chosen[0] if t == "radio" else chosen
+    if t == "button_choice":
+        opt = match_option(value, field["options"])
+        if opt is None:
+            raise FillError(f"{value!r} matches none of {field['options']}")
+        page.locator(f'[data-jh-id="{field["id"]}-{field["options"].index(opt)}"]').click()
+        return opt
     loc = page.locator(sel)
     if t == "select":
         opt = match_option(value, field["options"])
@@ -193,19 +241,22 @@ def fill_field(page, field, value, pause=0.0):
     else:
         loc.fill(str(value))
         result = str(value)
-        _pick_suggestion(page, loc)
+        _pick_suggestion(page, loc, value)
     if pause:
         time.sleep(pause)
     return result
 
 
-def _pick_suggestion(page, loc):
-    """Typeahead inputs (city, school) only accept a value picked from their list."""
+def _pick_suggestion(page, loc, value):
+    """Typeahead and searchable-select inputs only accept a value picked from their list:
+    choose the listed option that matches the value, else the first suggestion."""
     if loc.get_attribute("role") != "combobox" and loc.get_attribute("aria-autocomplete") is None:
         return
-    option = page.locator("[role=listbox] [role=option]").first
+    options = page.locator("[role=listbox] [role=option]")
     try:
-        option.wait_for(state="visible", timeout=2500)
-        option.click()
+        options.first.wait_for(state="visible", timeout=2500)
     except Exception:
-        pass   # no suggestions: the typed value stands
+        return   # no suggestions: the typed value stands
+    texts = [t.strip() for t in options.all_inner_texts()]
+    choice = match_option(value, texts)
+    options.nth(texts.index(choice) if choice else 0).click()

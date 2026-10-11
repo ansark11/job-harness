@@ -3,6 +3,7 @@
 
     python3 workflows/apply/run.py start <opportunity id> [--resume <id>] [--dry-run] [--headless]
     python3 workflows/apply/run.py continue <application id> [--dry-run] [--headless]
+    python3 workflows/apply/run.py submit <application id> [--headless]     # approve a filled portal application
     python3 workflows/apply/run.py regenerate <application id> <item> [--steer "..."]
     python3 workflows/apply/run.py status <application id>
 
@@ -17,9 +18,12 @@ stops at the first field it can't fill. Each unknown field is resolved:
   other file uploads     required: you handle it; optional: left blank
 
 Then the agent runs again. Easy Apply submits on its own once every field is
-answered, as configured; --dry-run stops at the review step instead. When
-something needs you, the output lists each item with the command to run;
-afterwards, `continue`.
+answered, as configured; --dry-run stops at the review step instead.
+Company portals (Greenhouse, Lever, Ashby, others) always stop filled but
+unsent: review `status`, then `submit` refills from the same answers and
+submits. Workday-style portals that need an account, and CAPTCHAs, come back
+to you with the link. When something needs you, the output lists each item
+with the command to run; afterwards, `continue`.
 """
 
 import argparse
@@ -91,7 +95,9 @@ def kind_of(field):
 
 
 class Applier:
-    def __init__(self, call, app_id, run, dry_run=False, headless=False):
+    def __init__(self, call, app_id, run, dry_run=False, headless=False, approved=False):
+        self.approved = approved        # the user approved submitting a filled portal application
+        self.channel = None             # easy_apply or portal, once the agent has said
         self.call = call
         self.app_id = app_id
         self.run = run
@@ -117,7 +123,16 @@ class Applier:
             args += ["--note", note]
         if report is not None:
             args += ["--report", self._write("report.json", report)]
+            if report.get("apply_url"):
+                args += ["--apply-url", report["apply_url"]]
         self.tracker(*args)
+
+    def mode(self, apply_type):
+        """Easy Apply submits on its own; a company portal only once you've approved it."""
+        if self.approved:
+            return "submit"
+        easy = self.channel == "easy_apply" if self.channel else apply_type == "easy"
+        return "submit" if easy else "fill"
 
     # --- resolving fields ---------------------------------------------------
 
@@ -220,7 +235,7 @@ class Applier:
                 self.status("needs_input", f"{len(pk['blocking'])} item(s) need you")
                 return self.summary()
             self.status("in_progress")
-            mode = "submit" if pk["job"]["apply_type"] in ("easy", "unknown", None) else "fill"
+            mode = self.mode(pk["job"]["apply_type"])
             args = [self._write("packet.json", pk), "--mode", mode]
             if self.dry_run:
                 args.append("--dry-run")
@@ -231,11 +246,25 @@ class Applier:
                                                                   "outcome", "source", "error")}
                                           for f in report.get("fields", [])]}
             s = report["status"]
+            self.channel = report.get("channel") or self.channel
+            if report.get("apply_url") and s == "needs_input":
+                # Keep the portal URL now, so the next round goes straight there instead of via LinkedIn.
+                self.status("in_progress", report=saved)
             if s == "submitted":
                 self.status("submitted", report=saved)
                 return self.summary()
             if s == "ready":
-                self.status("ready", "every field answered; stopped before Submit (dry run)", saved)
+                if self.dry_run:
+                    self.status("ready", "every field answered; stopped before Submit (dry run)", saved)
+                    return self.summary()
+                if self.channel == "easy_apply" and mode == "fill":
+                    continue                  # learned it's Easy Apply: go again and submit
+                self.status("ready", f"filled on the company portal ({report.get('ats') or 'portal'}); review it, "
+                                     f"then: python3 workflows/apply/run.py submit {self.app_id}", saved)
+                return self.summary()
+            if s == "needs_user":
+                self.status("needs_input", report.get("note") + "; when done: services/tracker/python/bin/python "
+                            f"services/tracker/tracker.py application status {self.app_id} submitted", saved)
                 return self.summary()
             if s == "already_applied":
                 self.status("submitted", "LinkedIn shows this job as already applied", saved)
@@ -244,8 +273,7 @@ class Applier:
                 self.status("queued", "daily application cap reached; continue tomorrow", saved)
                 return self.summary()
             if s != "needs_input":
-                hint = {"login_required": "sign in: services/apply-agent/python/bin/python services/apply-agent/login.py",
-                        "not_easy_apply": "this posting applies on the company site (external portals come next)"}
+                hint = {"login_required": "sign in: services/apply-agent/python/bin/python services/apply-agent/login.py"}
                 self.status("failed", hint.get(s) or report.get("error") or s, saved)
                 return self.summary()
             unknown = [f for f in report["fields"] if f.get("outcome") == "unknown"]
@@ -302,6 +330,16 @@ class Applier:
             needs.append(entry)
         out = {"application_id": self.app_id, "job": f"{app['job']['title']} at {app['job']['company']}",
                "status": app["status"], "note": app["note"], "needs": needs}
+        if app.get("apply_url"):
+            out["apply_url"] = app["apply_url"]
+        if app["status"] == "ready" and app.get("last_report"):
+            # What the portal will receive, for your review before `submit`.
+            values = {i["key"]: i["value"] for i in app["items"]}
+            resume = f"(your resume: {app['resume']['name']})"
+            out["review"] = {"fields": [{"label": f["label"], "outcome": f["outcome"], "source": f.get("source"),
+                                         "value": resume if f.get("source") == "resume" else values.get(f["key"])}
+                                        for f in app["last_report"]["fields"]],
+                             "screenshots": app["last_report"].get("screenshots", [])}
         if needs:
             out["then"] = f"python3 workflows/apply/run.py continue {self.app_id}"
         return out
@@ -318,6 +356,9 @@ def main(argv=None, call=None):
     for p in (start, cont):
         p.add_argument("--dry-run", action="store_true", help="never click Submit")
         p.add_argument("--headless", action="store_true")
+    p = sub.add_parser("submit", help="approve and submit a filled company-portal application")
+    p.add_argument("application")
+    p.add_argument("--headless", action="store_true")
     p = sub.add_parser("regenerate")
     p.add_argument("application")
     p.add_argument("item")
@@ -334,8 +375,11 @@ def main(argv=None, call=None):
                 app_id = call("tracker", create)["id"]
             else:
                 app_id = args.application
-            applier = Applier(call, app_id, run, getattr(args, "dry_run", False), getattr(args, "headless", False))
-            if args.cmd in ("start", "continue"):
+            applier = Applier(call, app_id, run, getattr(args, "dry_run", False), getattr(args, "headless", False),
+                              approved=args.cmd == "submit")
+            if args.cmd == "submit" and applier.app()["status"] != "ready":
+                raise StepError("only a filled application (status ready) can be submitted; run continue first")
+            if args.cmd in ("start", "continue", "submit"):
                 out = applier.process()
             elif args.cmd == "regenerate":
                 out = applier.regenerate(args.item, args.steer)

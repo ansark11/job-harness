@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- Stand-in for a Greenhouse-style application form: one page, native inputs,
+     asterisked required labels, a searchable city combobox, EEO select.
+     ?captcha shows a challenge instead of confirming. -->
+<html><head><meta charset="utf-8"><title>Apply - Portal Co</title>
+<style>[hidden]{display:none!important} .error{color:red}
+  [role=listbox]{border:1px solid #ccc} [role=option]{padding:2px}</style></head>
+<body>
+<form id="application_form" novalidate>
+  <label for="first_name">First Name *</label><input id="first_name" type="text" required>
+  <label for="last_name">Last Name *</label><input id="last_name" type="text" required>
+  <label for="email">Email *</label><input id="email" type="email" required>
+  <p class="error" id="email-error" hidden>Please enter a valid email address.</p>
+  <label for="phone">Phone</label><input id="phone" type="tel">
+  <label for="city">Location (City) *</label>
+  <input id="city" type="text" role="combobox" aria-autocomplete="list" required>
+  <ul id="city-list" role="listbox" hidden></ul>
+  <label for="resume">Resume/CV *</label><input id="resume" type="file" required>
+  <label for="cover">Cover Letter</label><input id="cover" type="file">
+  <label for="linkedin">LinkedIn Profile</label><input id="linkedin" type="text">
+  <label for="sponsor">Will you now or in the future require visa sponsorship to work in the United States? *</label>
+  <select id="sponsor" required><option value="">Select...</option><option>Yes</option><option>No</option></select>
+  <label for="why">Why do you want to work at Portal Co? *</label><textarea id="why" required></textarea>
+  <label for="gender">Gender</label>
+  <select id="gender"><option value="">Please select</option><option>Male</option><option>Female</option>
+    <option>Decline To Self Identify</option></select>
+  <button type="submit">Submit Application</button>
+</form>
+<div id="thanks" hidden><h2>Thank you for applying to Portal Co!</h2></div>
+<div id="challenge" hidden><iframe src="https://www.google.com/recaptcha/api2/anchor?k=test" width="300" height="80"></iframe></div>
+<script>
+  const $ = id => document.getElementById(id);
+  const cities = ['Toronto, ON, Canada', 'Toronto, OH, United States', 'Vancouver, BC, Canada'];
+  $('city').addEventListener('input', () => {
+    const q = $('city').value.toLowerCase();
+    const list = $('city-list');
+    list.innerHTML = '';
+    cities.filter(c => c.toLowerCase().startsWith(q.slice(0, 3))).forEach(c => {
+      const li = document.createElement('li'); li.setAttribute('role', 'option'); li.textContent = c;
+      li.onclick = () => { $('city').value = c; list.hidden = true; };
+      list.appendChild(li);
+    });
+    list.hidden = !list.children.length;
+  });
+  $('application_form').onsubmit = e => {
+    e.preventDefault();
+    if (!/^[^@\s]+@[^@\s]+\.\w+$/.test($('email').value)) { $('email-error').hidden = false; return; }
+    if (new URLSearchParams(location.search).has('captcha')) { $('challenge').hidden = false; return; }
+    window.submitted = { first: $('first_name').value, last: $('last_name').value, email: $('email').value,
+      city: $('city').value, resume: $('resume').files.length ? $('resume').files[0].name : null,
+      sponsor: $('sponsor').value, why: $('why').value, gender: $('gender').value, linkedin: $('linkedin').value };
+    $('application_form').hidden = true; $('thanks').hidden = false;
+  };
+</script>
+</body></html>

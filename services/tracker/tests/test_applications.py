@@ -81,6 +81,13 @@ class ApplicationTests(TempDb):
         self.assertEqual((item["state"], item["source"], item["value"]), ("approved", "user", "No"))
         self.assertEqual(bank.approved_list(self.conn), [])          # profile answers aren't long-form library
 
+    def test_apply_url_is_kept_and_reaches_the_packet(self):
+        a = applications.create(self.conn, "1")
+        self.assertIsNone(applications.packet(self.conn, a["id"])["job"]["apply_url"])
+        applications.set_status(self.conn, a["id"], "ready", apply_url="https://jobs.lever.co/x/1")
+        applications.set_status(self.conn, a["id"], "in_progress")          # later updates don't erase it
+        self.assertEqual(applications.packet(self.conn, a["id"])["job"]["apply_url"], "https://jobs.lever.co/x/1")
+
     def test_status_and_submitted_at(self):
         a = applications.create(self.conn, "1")
         out = applications.set_status(self.conn, a["id"], "submitted", report={"status": "submitted"})

@@ -165,12 +165,14 @@ def edit(conn, app_id, ref, value, now=None):
     return _find_item(conn, app_id, item["key"])
 
 
-def set_status(conn, app_id, status, note=None, report=None, now=None):
+def set_status(conn, app_id, status, note=None, report=None, apply_url=None, now=None):
     if status not in STATUSES:
         raise TrackerError(f"bad application status {status!r}")
     get(conn, app_id)
     now = _iso(now or utcnow())
     with conn:
+        if apply_url:
+            conn.execute("UPDATE applications SET apply_url = ? WHERE id = ?", (apply_url, app_id))
         conn.execute("UPDATE applications SET status = ?, note = ?, updated_at = ?, "
                      "last_report = COALESCE(?, last_report), "
                      "submitted_at = CASE WHEN ? = 'submitted' THEN ? ELSE submitted_at END WHERE id = ?",
@@ -188,6 +190,7 @@ def packet(conn, app_id):
         elif it["state"] == "skipped":
             skip.append(it["key"])
     ext = app["resume"]["file_path"].rsplit(".", 1)[-1]
-    return {"application_id": app_id, "job": {k: app["job"][k] for k in ("id", "url", "apply_type")},
+    return {"application_id": app_id,
+            "job": {**{k: app["job"][k] for k in ("id", "url", "apply_type")}, "apply_url": app["apply_url"]},
             "resume_file": app["resume"]["file_path"], "resume_upload_name": f"{app['resume']['name']}.{ext}",
             "answers": answers, "skip": skip, "blocking": app["blocking"]}

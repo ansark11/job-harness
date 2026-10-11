@@ -94,7 +94,9 @@ class Services:
         return {"status": "submitted", "fields": seen, "screenshots": []}
 
 
-class ApplyFlowTests(unittest.TestCase):
+class FlowBase(unittest.TestCase):
+    """A temp tracker with a resume, one kept posting and a few bank answers."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         t = Path(self.tmp.name)
@@ -125,6 +127,8 @@ class ApplyFlowTests(unittest.TestCase):
             code = wf.main(list(argv), call=self.svc)
         return code, json.loads(out.getvalue())
 
+
+class ApplyFlowTests(FlowBase):
     def test_full_flow_from_inbox_to_submitted(self):
         # Round 1: the phone question's wording is new -> inbox, with the mapper's suggested key.
         code, out = self.wf("start", "1")
@@ -216,6 +220,77 @@ class ApplyFlowTests(unittest.TestCase):
         code, out = self.wf("start", "1")
         self.assertEqual(out["needs"][0]["note"], "'Nope' matches none of ['Yes', 'No']")
         self.assertIn("application edit", out["needs"][0]["do"][0])
+
+
+class PortalFlowTests(FlowBase):
+    """External applications: filled, reviewed, then submitted only on your say-so."""
+
+    def setUp(self):
+        super().setUp()
+        import sqlite3
+        with sqlite3.connect(os.environ["TRACKER_DB"]) as c:
+            c.execute("UPDATE opportunities SET apply_type = 'external'")
+        self.modes = []
+        self.svc.agent = self.portal
+        self.svc("tracker", ["bank", "set", "phone", "416"])
+
+    def portal(self, packet, args):
+        mode = args[args.index("--mode") + 1]
+        self.modes.append((mode, packet["job"]["apply_url"]))
+        f = {**SPONSOR, "page": 1, "source": "packet",
+             "outcome": "filled" if SPONSOR["key"] in packet["answers"] else "unknown"}
+        if f["outcome"] == "unknown":
+            return {"status": "needs_input", "fields": [f], "channel": "portal", "apply_url": "https://jobs.lever.co/x/1"}
+        status = "submitted" if mode == "submit" else "ready"
+        return {"status": status, "fields": [f], "channel": "portal", "ats": "lever",
+                "apply_url": "https://jobs.lever.co/x/1", "screenshots": ["/tmp/01-filled.png"]}
+
+    def test_portal_waits_for_approval_then_submits(self):
+        code, out = self.wf("start", "1")
+        app_id = out["application_id"]
+        self.assertEqual(out["status"], "ready")
+        self.assertIn(f"run.py submit {app_id}", out["note"])
+        self.assertEqual(out["apply_url"], "https://jobs.lever.co/x/1")
+        self.assertEqual(out["review"]["fields"][0]["value"], "No")
+        self.assertEqual(out["review"]["screenshots"], ["/tmp/01-filled.png"])
+        code, out = self.wf("submit", app_id)
+        self.assertEqual(out["status"], "submitted")
+        # Fill rounds until ready (the first found an unknown field), then submit only on approval.
+        # After the first round the portal URL is reused instead of going back through LinkedIn.
+        url = "https://jobs.lever.co/x/1"
+        self.assertEqual(self.modes, [("fill", None), ("fill", url), ("submit", url)])
+
+    def test_submit_refused_unless_ready(self):
+        self.svc.agent = lambda packet, args: {"status": "error", "error": "boom", "fields": []}
+        app_id = self.wf("start", "1")[1]["application_id"]
+        code, out = self.wf("submit", app_id)
+        self.assertEqual(code, 1)
+        self.assertIn("status ready", out["error"])
+
+    def test_manual_portal_comes_back_to_you(self):
+        self.svc.agent = lambda packet, args: {"status": "needs_user", "fields": [], "channel": "portal",
+                                               "note": "workday portals need an account you create; apply by hand at "
+                                                       "https://x.myworkdayjobs.com/1",
+                                               "apply_url": "https://x.myworkdayjobs.com/1"}
+        code, out = self.wf("start", "1")
+        self.assertEqual(out["status"], "needs_input")
+        self.assertIn("apply by hand", out["note"])
+        self.assertIn("application status", out["note"])
+
+    def test_unknown_type_that_turns_out_easy_submits_on_its_own(self):
+        modes = []
+
+        def agent(packet, args):
+            mode = args[args.index("--mode") + 1]
+            modes.append(mode)
+            return {"status": "submitted" if mode == "submit" else "ready", "fields": [], "channel": "easy_apply"}
+        self.svc.agent = agent
+        tracker_db = os.environ["TRACKER_DB"]
+        import sqlite3
+        with sqlite3.connect(tracker_db) as c:
+            c.execute("UPDATE opportunities SET apply_type = 'unknown'")
+        code, out = self.wf("start", "1")
+        self.assertEqual((out["status"], modes), ("submitted", ["fill", "submit"]))
 
 
 if __name__ == "__main__":

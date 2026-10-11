@@ -5,6 +5,7 @@ Apply to a kept opportunity, round by round, until it's submitted or needs you.
 ```bash
 python3 workflows/apply/run.py start <opportunity id> [--resume <id>] [--dry-run] [--headless]
 python3 workflows/apply/run.py continue <application id> [--dry-run]
+python3 workflows/apply/run.py submit <application id>          # approve a filled company-portal application
 python3 workflows/apply/run.py regenerate <application id> <item> [--steer "more on payouts"]
 python3 workflows/apply/run.py status <application id>
 ```
@@ -25,7 +26,11 @@ unknown field is resolved and saved as an application item:
 
 If nothing needs you, the next round runs straight away. **Easy Apply
 submits on its own** once every field is answered; `--dry-run` stops at the
-review step. When something needs you, the output lists each item with the
+review step. **Company portals stop filled but unsent** (`ready`): `status`
+shows every value the portal will receive and a full-page screenshot;
+`submit` refills from those same answers and submits. Workday-style portals
+and unsolved CAPTCHAs come back to you with the link; after applying by
+hand, mark it with `tracker.py application status <id> submitted`. When something needs you, the output lists each item with the
 exact command to run (approve/edit/regenerate a draft, resolve or answer an
 inbox question, set a bank key), then `continue`.
 
@@ -34,5 +39,4 @@ drafter as voice examples for similar questions. Inbox answers become bank
 aliases, so a question is only ever asked once.
 
 Working files per application (packet, last report, drafts) go to
-`data/<application id>/` (gitignored). External application portals come
-next; until then they finish as `failed` with a note.
+`data/<application id>/` (gitignored).

@@ -34,7 +34,7 @@ Applications (driven by workflows/apply/run.py; these are the data and the revie
     tracker.py application approve <id> <item>             # item = key or its number in `show`
     tracker.py application edit <id> <item> --value V | --value-file F
     tracker.py application items <id> --set items.json      # workflow use
-    tracker.py application status <id> <status> [--note N] [--report report.json]   # workflow use
+    tracker.py application status <id> <status> [--note N] [--report F] [--apply-url U]   # workflow use
 
 Approved long-form answers
     tracker.py answers add --question Q --answer A [--job-id ID] [--company C]
@@ -172,6 +172,7 @@ def build_parser():
     r.add_argument("status", choices=applications.STATUSES)
     r.add_argument("--note")
     r.add_argument("--report", help="JSON file with the agent's report")
+    r.add_argument("--apply-url", help="the company portal, once resolved")
 
     p = sub.add_parser("answers")
     s = p.add_subparsers(dest="sub", required=True)
@@ -327,7 +328,7 @@ def cmd_application(conn, args, run):
         text = sys.stdin.read() if args.set == "-" else Path(args.set).read_text()
         return {"items": applications.upsert_items(conn, args.id, json.loads(text))}
     report = json.loads(Path(args.report).read_text()) if args.report else None
-    out = applications.set_status(conn, args.id, args.status, args.note, report)
+    out = applications.set_status(conn, args.id, args.status, args.note, report, args.apply_url)
     run.event("application_status", id=args.id, status=args.status, note=args.note)
     return out
 

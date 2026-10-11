@@ -20,6 +20,14 @@ class MatchOptionTests(unittest.TestCase):
         self.assertEqual(forms.match_option("Asian", ["White", "Asian (Not Hispanic or Latino)", "Black"]),
                          "Asian (Not Hispanic or Latino)")
 
+    def test_decline_wordings_are_one_answer(self):
+        for value in ("I don't wish to answer", "Prefer not to say", "Decline to self-identify"):
+            self.assertEqual(forms.match_option(value, ["Male", "Female", "Decline To Self Identify"]),
+                             "Decline To Self Identify")
+            self.assertEqual(forms.match_option(value, ["Yes", "No", "I do not want to answer"]),
+                             "I do not want to answer")
+        self.assertIsNone(forms.match_option("Prefer not to say", ["Yes", "No"]))
+
     def test_ambiguous_or_missing_is_none(self):
         self.assertIsNone(forms.match_option("Maybe", ["Yes", "No"]))
         self.assertIsNone(forms.match_option("Asian", ["Asian - East", "Asian - South"]))

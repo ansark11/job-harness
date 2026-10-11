@@ -4,15 +4,16 @@
     ./python/bin/python apply.py packet.json --mode fill|submit [--dry-run] [--headless]
 
 packet.json (built by workflows/apply):
-  {"application_id", "job": {"id", "url", "apply_type"},
+  {"application_id", "job": {"id", "url", "apply_type", "apply_url"},   # apply_url: the portal, once known
    "resume_file", "resume_upload_name",          # uploaded under the readable name
    "answers": {<field key>: <value>},            # keys are forms.normalize(label)
    "skip": [<field key>, ...]}                   # leave these blank
 
 Uses the persistent browser profile in data/browser-profile/ (sign in once
 with login.py). Prints a report: {"status", "fields", "unknown", "errors",
-"screenshots", ...}. status is one of submitted, ready, needs_input,
-already_applied, not_easy_apply, login_required, cap_reached, error.
+"screenshots", "channel", "apply_url", ...}. status is one of submitted, ready,
+needs_input, needs_user (manual portal or CAPTCHA), already_applied,
+not_easy_apply, login_required, cap_reached, error.
 
 Safeguards: --dry-run never clicks Submit; at most --daily-cap submissions
 per local day (counted in data/submissions.jsonl); headed by default so you
@@ -27,6 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import easyapply
+import portals
 import runlog
 
 HERE = Path(__file__).resolve().parent
@@ -67,12 +69,17 @@ def upload_copy(packet):
     return {**packet, "resume_file": str(dest), "resume_upload_name": name}
 
 
-def run_packet(page, packet, mode, dry_run, shots_dir, cap, pause=(0.3, 0.9)):
+def run_packet(page, packet, mode, dry_run, shots_dir, cap, pause=(0.3, 0.9), success_wait=20):
+    """Easy Apply or the company's portal. An unknown apply type tries Easy Apply first."""
     apply_type = packet["job"].get("apply_type")
-    if apply_type not in ("easy", "unknown", None):
-        return {"status": "error", "error": f"apply type {apply_type!r} isn't supported yet", "fields": []}
-    walk = easyapply.Walk(page, packet, mode, dry_run, shots_dir, pause)
-    report = walk.run(cap_ok=lambda: submitted_today() < cap)
+    cap_ok = lambda: submitted_today() < cap      # noqa: E731
+    report = None
+    if apply_type != "external":
+        report = easyapply.Walk(page, packet, mode, dry_run, shots_dir, pause).run(cap_ok)
+        report["channel"] = "easy_apply"
+    if apply_type == "external" or (report["status"] == "not_easy_apply" and apply_type != "easy"):
+        report = portals.PortalWalk(page, packet, mode, dry_run, shots_dir, pause, success_wait).run(cap_ok)
+        report["channel"] = "portal"
     if report["status"] == "submitted":
         record_submission(packet)
     return report
@@ -99,7 +106,9 @@ def main(argv=None):
                                                        viewport={"width": 1280, "height": 900})
             try:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
-                report = run_packet(page, packet, args.mode, args.dry_run, shots, args.daily_cap)
+                # Headed, a CAPTCHA can be solved by hand while we wait for the portal's confirmation.
+                report = run_packet(page, packet, args.mode, args.dry_run, shots, args.daily_cap,
+                                    success_wait=20 if args.headless else 180)
             except Exception as e:      # a browser failure must still produce a report
                 report = {"status": "error", "error": f"{type(e).__name__}: {e}", "fields": []}
             finally:
