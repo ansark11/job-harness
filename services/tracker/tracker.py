@@ -28,6 +28,14 @@ Inbox (questions an application asked that the bank couldn't answer)
     tracker.py inbox answer <id> --answer A [--key K] [--sensitive]   # a new question
     tracker.py inbox dismiss <id>
 
+Applications (driven by workflows/apply/run.py; these are the data and the review actions)
+    tracker.py application create <opportunity id> [--resume <id>]
+    tracker.py application list [--status S] | show <id> | packet <id>
+    tracker.py application approve <id> <item>             # item = key or its number in `show`
+    tracker.py application edit <id> <item> --value V | --value-file F
+    tracker.py application items <id> --set items.json      # workflow use
+    tracker.py application status <id> <status> [--note N] [--report report.json]   # workflow use
+
 Approved long-form answers
     tracker.py answers add --question Q --answer A [--job-id ID] [--company C]
     tracker.py answers list | similar --question Q [--limit N]
@@ -41,6 +49,7 @@ import json
 import sys
 from pathlib import Path
 
+import applications
 import bank
 import db
 import resumes
@@ -135,6 +144,34 @@ def build_parser():
     r.add_argument("--sensitive", action="store_true")
     r = s.add_parser("dismiss")
     r.add_argument("id", type=int)
+
+    p = sub.add_parser("application")
+    s = p.add_subparsers(dest="sub", required=True)
+    r = s.add_parser("create")
+    r.add_argument("opportunity")
+    r.add_argument("--resume")
+    r = s.add_parser("list")
+    r.add_argument("--status", choices=applications.STATUSES)
+    for name in ("show", "packet"):
+        r = s.add_parser(name)
+        r.add_argument("id")
+    r = s.add_parser("approve")
+    r.add_argument("id")
+    r.add_argument("item")
+    r = s.add_parser("edit")
+    r.add_argument("id")
+    r.add_argument("item")
+    g = r.add_mutually_exclusive_group(required=True)
+    g.add_argument("--value")
+    g.add_argument("--value-file")
+    r = s.add_parser("items")
+    r.add_argument("id")
+    r.add_argument("--set", required=True, help="JSON list of items ('-' for stdin)")
+    r = s.add_parser("status")
+    r.add_argument("id")
+    r.add_argument("status", choices=applications.STATUSES)
+    r.add_argument("--note")
+    r.add_argument("--report", help="JSON file with the agent's report")
 
     p = sub.add_parser("answers")
     s = p.add_subparsers(dest="sub", required=True)
@@ -266,6 +303,35 @@ def cmd_inbox(conn, args, run):
     return bank.inbox_dismiss(conn, args.id)
 
 
+def cmd_application(conn, args, run):
+    if args.sub == "create":
+        app = applications.create(conn, args.opportunity, args.resume)
+        run.event("application_created", id=app["id"], opportunity=args.opportunity, existing=app.get("existing", False))
+        return app
+    if args.sub == "list":
+        return {"applications": applications.list_all(conn, args.status)}
+    if args.sub == "show":
+        return applications.get(conn, args.id)
+    if args.sub == "packet":
+        return applications.packet(conn, args.id)
+    if args.sub == "approve":
+        item = applications.approve(conn, args.id, args.item)
+        run.event("item_approved", application_id=args.id, key=item["key"], kind=item["kind"])
+        return item
+    if args.sub == "edit":
+        value = Path(args.value_file).read_text().strip() if args.value_file else args.value
+        item = applications.edit(conn, args.id, args.item, value)
+        run.event("item_edited", application_id=args.id, key=item["key"], kind=item["kind"])
+        return item
+    if args.sub == "items":
+        text = sys.stdin.read() if args.set == "-" else Path(args.set).read_text()
+        return {"items": applications.upsert_items(conn, args.id, json.loads(text))}
+    report = json.loads(Path(args.report).read_text()) if args.report else None
+    out = applications.set_status(conn, args.id, args.status, args.note, report)
+    run.event("application_status", id=args.id, status=args.status, note=args.note)
+    return out
+
+
 def cmd_answers(conn, args, run):
     if args.sub == "add":
         return bank.approved_add(conn, args.question, args.answer, args.job_id, args.company)
@@ -274,7 +340,8 @@ def cmd_answers(conn, args, run):
     return {"similar": bank.approved_similar(conn, args.question, args.limit)}
 
 
-HANDLERS = {"resume": cmd_resume, "bank": cmd_bank, "inbox": cmd_inbox, "answers": cmd_answers}
+HANDLERS = {"resume": cmd_resume, "bank": cmd_bank, "inbox": cmd_inbox, "answers": cmd_answers,
+            "application": cmd_application}
 
 
 def loggable_argv(argv):
@@ -284,7 +351,7 @@ def loggable_argv(argv):
     if out[:2] == ["bank", "set"] and len(out) > 3:
         out[3] = "[answer]"
     for i, a in enumerate(out[:-1]):
-        if a == "--answer":
+        if a in ("--answer", "--value"):
             out[i + 1] = "[answer]"
     return out
 

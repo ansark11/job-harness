@@ -107,6 +107,43 @@ MIGRATIONS = [
         approved_at TEXT NOT NULL
     );
     """,
+    # 3: applications and the answer behind every field
+    """
+    CREATE TABLE applications (
+        id             TEXT PRIMARY KEY,
+        opportunity_id TEXT NOT NULL REFERENCES opportunities (id),
+        resume_id      TEXT NOT NULL REFERENCES resumes (id),
+        apply_type     TEXT,
+        status         TEXT NOT NULL DEFAULT 'queued'
+                       CHECK (status IN ('queued', 'in_progress', 'needs_input', 'ready', 'submitted', 'failed')),
+        note           TEXT,
+        last_report    TEXT,        -- the agent's last report, minus field values
+        created_at     TEXT NOT NULL,
+        updated_at     TEXT NOT NULL,
+        submitted_at   TEXT
+    );
+
+    CREATE TABLE application_items (
+        application_id TEXT NOT NULL REFERENCES applications (id),
+        key            TEXT NOT NULL,   -- the form field's normalized label
+        label          TEXT NOT NULL,
+        field_type     TEXT,
+        options        TEXT,
+        required       INTEGER NOT NULL DEFAULT 0,
+        page           INTEGER,
+        kind           TEXT NOT NULL CHECK (kind IN ('profile', 'long_form', 'file')),
+        state          TEXT NOT NULL
+                       CHECK (state IN ('filled', 'needs_review', 'needs_answer', 'approved', 'skipped')),
+        value          TEXT,
+        source         TEXT,            -- bank, draft, user
+        bank_key       TEXT,
+        inbox_id       INTEGER,
+        meta           TEXT,            -- draft details: resume_points, char limit
+        seq            INTEGER NOT NULL,
+        updated_at     TEXT NOT NULL,
+        PRIMARY KEY (application_id, key)
+    );
+    """,
 ]
 
 

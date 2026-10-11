@@ -1,0 +1,133 @@
+<!doctype html>
+<!-- A stand-in for a LinkedIn job page with an Easy Apply dialog: same roles,
+     button names and step structure, none of LinkedIn's markup. ?noeasy hides
+     the Easy Apply button; ?applied shows the "Applied" banner. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Senior Product Manager, Payouts - Test Co</title>
+<style>
+  [hidden] { display: none !important; }
+  .sr { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  [role=dialog] { border: 1px solid #999; padding: 16px; width: 600px; }
+  .artdeco-inline-feedback--error { color: red; }
+</style>
+</head>
+<body>
+<h1>Senior Product Manager, Payouts</h1>
+<p id="applied" hidden>Applied 3 days ago</p>
+<button id="easy" class="jobs-apply-button" aria-label="Easy Apply to Senior Product Manager at Test Co">Easy Apply</button>
+
+<div id="modal" role="dialog" aria-label="Apply to Test Co" hidden>
+  <button aria-label="Dismiss" id="dismiss">×</button>
+
+  <section data-step="1">
+    <h3>Contact info</h3>
+    <label for="email">Email address*</label>
+    <select id="email" required>
+      <option value="">Select an option</option>
+      <option value="jane@example.com" selected>jane@example.com</option>
+    </select>
+    <label for="phone">Mobile phone number*</label>
+    <input id="phone" type="text" required>
+    <span class="artdeco-inline-feedback--error" id="phone-err" hidden>Enter a valid phone number</span>
+  </section>
+
+  <section data-step="2" hidden>
+    <h3>Resume</h3>
+    <fieldset>
+      <legend>Choose a resume</legend>
+      <label><input class="sr" type="radio" name="resume" value="a"> Old Resume 2024.pdf</label>
+      <label><input class="sr" type="radio" name="resume" value="b" checked> Jane Doe - Resume.pdf</label>
+    </fieldset>
+    <label for="resume-upload">Upload resume</label>
+    <input id="resume-upload" type="file" accept=".pdf,.docx" class="sr">
+    <label for="cover-upload">Upload cover letter</label>
+    <input id="cover-upload" type="file" class="sr">
+  </section>
+
+  <section data-step="3" hidden>
+    <h3>Additional questions</h3>
+    <fieldset aria-required="true">
+      <legend>Will you now or in the future require visa sponsorship to work in the United States?</legend>
+      <label><input class="sr" type="radio" name="sponsor" value="Yes" required> Yes</label>
+      <label><input class="sr" type="radio" name="sponsor" value="No" required> No</label>
+    </fieldset>
+    <label for="years">How many years of work experience do you have with Payments?*</label>
+    <input id="years" type="number" required>
+    <label for="gender">Gender</label>
+    <select id="gender">
+      <option>Select an option</option>
+      <option>Male</option><option>Female</option><option>Non-binary</option><option>I don't wish to answer</option>
+    </select>
+    <label for="why">Why are you interested in this role?</label>
+    <textarea id="why" maxlength="1000" required></textarea>
+  </section>
+
+  <section data-step="4" hidden>
+    <h3>Review your application</h3>
+    <p>Check your answers before submitting.</p>
+  </section>
+
+  <div id="sent" hidden><h2>Your application was sent to Test Co</h2></div>
+
+  <footer>
+    <button id="next" aria-label="Continue to next step">Next</button>
+    <button id="review" aria-label="Review your application" hidden>Review</button>
+    <button id="submit" aria-label="Submit application" hidden>Submit application</button>
+  </footer>
+</div>
+
+<div id="confirm" role="alertdialog" hidden>
+  <p>Save this application?</p>
+  <button id="discard">Discard</button>
+  <button>Save</button>
+</div>
+
+<script>
+  const q = new URLSearchParams(location.search);
+  if (q.has('noeasy')) document.getElementById('easy').hidden = true;
+  if (q.has('applied')) document.getElementById('applied').hidden = false;
+  let step = 1;
+  window.events = [];
+  const $ = id => document.getElementById(id);
+  const sections = () => [...document.querySelectorAll('section[data-step]')];
+  function show() {
+    sections().forEach(s => s.hidden = Number(s.dataset.step) !== step);
+    $('next').hidden = step >= 3;
+    $('review').hidden = step !== 3;
+    $('submit').hidden = step !== 4;
+  }
+  function valid() {
+    const sec = sections().find(s => Number(s.dataset.step) === step);
+    let ok = true;
+    for (const el of sec.querySelectorAll('[required]')) {
+      if (el.type === 'radio') {
+        if (!sec.querySelector(`input[name="${el.name}"]:checked`)) ok = false;
+      } else if (!el.value) ok = false;
+    }
+    if (step === 1 && $('phone').value && !/^[0-9+() -]{7,}$/.test($('phone').value)) {
+      $('phone-err').hidden = false; $('phone-err').setAttribute('role', 'alert'); return false;
+    }
+    if (!ok) { window.events.push('blocked'); }
+    return ok;
+  }
+  $('easy').onclick = () => { $('modal').hidden = false; step = 1; show(); window.events.push('opened'); };
+  $('next').onclick = () => { if (valid()) { step++; show(); } };
+  $('review').onclick = () => { if (valid()) { step = 4; show(); } };
+  $('submit').onclick = () => {
+    window.events.push('submitted');
+    window.submitted = {
+      phone: $('phone').value, resume: (document.querySelector('input[name=resume]:checked') || {}).value,
+      upload: $('resume-upload').files.length ? $('resume-upload').files[0].name : null,
+      sponsor: (document.querySelector('input[name=sponsor]:checked') || {}).value,
+      years: $('years').value, gender: $('gender').value, why: $('why').value };
+    sections().forEach(s => s.hidden = true);
+    document.querySelector('footer').hidden = true;
+    $('sent').hidden = false;
+  };
+  $('dismiss').onclick = () => { $('confirm').hidden = false; };
+  $('discard').onclick = () => { $('confirm').hidden = true; $('modal').hidden = true; window.events.push('discarded'); };
+</script>
+</body>
+</html>

@@ -17,6 +17,9 @@ workflows that chain them. Spec: `../opportunity-search.md`.
 | `workflows/` | Orchestration that calls services in sequence. The only place that knows more than one service exists. |
 | `launchd/` | LaunchAgent plists for the daily run. |
 
+Workflows: `workflows/daily_search` (search → match → ingest, scheduled) and
+`workflows/apply` (apply-agent ↔ bank/drafter/inbox rounds until submitted).
+
 Build order and design: `~/.claude/plans/i-m-looking-to-build-sleepy-floyd.md`.
 Phase A builds every feature headless (CLI + tests); the UI comes after the
 user signs off, starting with several mockup options to choose from.
