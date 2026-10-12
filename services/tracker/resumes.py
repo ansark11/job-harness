@@ -71,7 +71,19 @@ def _pdf_text(path):
                            "(python3 -m venv python && python/bin/pip install -r requirements.txt)") from e
     try:
         reader = pypdf.PdfReader(str(path))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        pages = []
+        for page in reader.pages:
+            # Layout mode keeps lines whole; plain mode splits some exports (Google Docs)
+            # into one word per line. Fall back to plain if layout finds nothing.
+            try:
+                text = page.extract_text(extraction_mode="layout")
+            except Exception:
+                text = ""
+            if not text.strip():
+                text = page.extract_text() or ""
+            # A wide gap inside a line is a column break (e.g. Education | Certifications side by side).
+            pages.append("\n".join(re.sub(r"\s{4,}", " | ", line.strip()) for line in text.splitlines() if line.strip()))
+        return "\n\n".join(pages)
     except pypdf.errors.PdfReadError as e:
         raise TrackerError(f"{path.name} isn't a readable PDF: {e}") from e
 
@@ -110,6 +122,14 @@ def add(conn, src, name=None, make_default=False, now=None):
     if first or make_default:
         set_default(conn, rid)
     rec = get(conn, rid)
+    return {**rec, "characters": len(text), "preview": text[:300]}
+
+
+def refresh(conn, rid):
+    """Re-extract a stored resume's text (after an extraction fix)."""
+    rec = get(conn, rid)
+    text = extract_text(rec["file_path"])
+    Path(rec["text_path"]).write_text(text)
     return {**rec, "characters": len(text), "preview": text[:300]}
 
 

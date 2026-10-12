@@ -11,7 +11,7 @@ Opportunities and runs
 
 Resumes
     tracker.py resume add <file> [--name NAME] [--default]
-    tracker.py resume list | show <id> [--text] | default [<id>]
+    tracker.py resume list | show <id> [--text] | default [<id>] | refresh <id>
 
 Answer bank (reusable answers to application questions)
     tracker.py bank onboard                     # interactive: answer the standard questions once
@@ -99,6 +99,8 @@ def build_parser():
     r.add_argument("--text", action="store_true")
     r = s.add_parser("default")
     r.add_argument("id", nargs="?")
+    r = s.add_parser("refresh", help="re-extract a resume's text")
+    r.add_argument("id")
 
     p = sub.add_parser("bank")
     s = p.add_subparsers(dest="sub", required=True)
@@ -229,6 +231,8 @@ def cmd_resume(conn, args, run):
     if args.sub == "show":
         rec = resumes.get(conn, args.id)
         return {**rec, "text": Path(rec["text_path"]).read_text()} if args.text else rec
+    if args.sub == "refresh":
+        return resumes.refresh(conn, args.id)
     return resumes.set_default(conn, args.id) if args.id else resumes.default(conn)
 
 

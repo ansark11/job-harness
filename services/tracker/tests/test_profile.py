@@ -86,6 +86,15 @@ class ResumeTests(TempDb):
         self.assertEqual(resumes.default(self.conn)["id"], b["id"])
         self.assertEqual(len(resumes.list_all(self.conn)), 3)
 
+    def test_pdf_lines_stay_whole_and_refresh_rewrites_text(self):
+        make_pdf(self.dir / "b.pdf", RESUME_LINES)
+        rec = resumes.add(self.conn, self.dir / "b.pdf")
+        text = Path(rec["text_path"]).read_text()
+        self.assertIn("Led card-issuing and payments products at a fintech, growing volume 4x.", text)
+        Path(rec["text_path"]).write_text("stale")
+        resumes.refresh(self.conn, rec["id"])
+        self.assertIn("card-issuing", Path(rec["text_path"]).read_text())
+
     def test_same_file_twice_returns_existing(self):
         make_docx(self.dir / "a.docx", RESUME_LINES)
         first = resumes.add(self.conn, self.dir / "a.docx")
