@@ -32,6 +32,12 @@ SEED = [
     ("linkedin_url", "contact", "any", 0, "LinkedIn profile URL", None),
     ("website_url", "contact", "any", 0, "Website or portfolio URL", None),
 
+    ("current_company", "background", "any", 0, "Current company", None),
+    ("current_title", "background", "any", 0, "Current title", None),
+    ("school", "background", "any", 0, "School / university", None),
+    ("degree", "background", "any", 0, "Degree", None),
+    ("field_of_study", "background", "any", 0, "Field of study / discipline", None),
+
     ("authorized_ca", "work_authorization", "any", 0,
      "Are you legally authorized to work in Canada?", ["Yes", "No"]),
     ("authorized_us", "work_authorization", "any", 0,

@@ -10,8 +10,10 @@ Opportunities and runs
     tracker.py run start --kind K | finish <run id> --status ok|failed [--stats JSON] | last-success --kind K
 
 Resumes
-    tracker.py resume add <file> [--name NAME] [--default]
+    tracker.py resume add <file> [--name NAME] [--default] [--text-from <file>]   # upload file; text source
     tracker.py resume list | show <id> [--text] | default [<id>] | refresh <id>
+    tracker.py resume text <id> <file>          # read this resume's text from another file
+    tracker.py resume remove <id>
 
 Answer bank (reusable answers to application questions)
     tracker.py bank onboard                     # interactive: answer the standard questions once
@@ -93,7 +95,13 @@ def build_parser():
     r.add_argument("file")
     r.add_argument("--name")
     r.add_argument("--default", action="store_true")
+    r.add_argument("--text-from", help="read the text from this file instead (e.g. the .docx of a PDF)")
     s.add_parser("list")
+    r = s.add_parser("text")
+    r.add_argument("id")
+    r.add_argument("file")
+    r = s.add_parser("remove")
+    r.add_argument("id")
     r = s.add_parser("show")
     r.add_argument("id")
     r.add_argument("--text", action="store_true")
@@ -222,7 +230,7 @@ def cmd_opportunities(conn, args, run):
 
 def cmd_resume(conn, args, run):
     if args.sub == "add":
-        rec = resumes.add(conn, args.file, args.name, args.default)
+        rec = resumes.add(conn, args.file, args.name, args.default, args.text_from)
         run.event("resume_added", id=rec["id"], resume_name=rec["name"], characters=rec.get("characters"),
                   already_added=rec.get("already_added", False))
         return rec
@@ -233,6 +241,10 @@ def cmd_resume(conn, args, run):
         return {**rec, "text": Path(rec["text_path"]).read_text()} if args.text else rec
     if args.sub == "refresh":
         return resumes.refresh(conn, args.id)
+    if args.sub == "text":
+        return resumes.set_text_source(conn, args.id, args.file)
+    if args.sub == "remove":
+        return resumes.remove(conn, args.id)
     return resumes.set_default(conn, args.id) if args.id else resumes.default(conn)
 
 

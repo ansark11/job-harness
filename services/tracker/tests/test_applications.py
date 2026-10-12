@@ -42,6 +42,11 @@ class ApplicationTests(TempDb):
         with self.assertRaisesRegex(store.TrackerError, "isn't a PDF or DOCX"):
             applications.create(self.conn, "1", txt["id"])
 
+    def test_resume_used_by_an_application_cant_be_removed(self):
+        applications.create(self.conn, "1")
+        with self.assertRaisesRegex(store.TrackerError, "used by 1 application"):
+            resumes.remove(self.conn, self.resume["id"])
+
     def test_items_packet_and_blocking(self):
         a = applications.create(self.conn, "1")
         applications.upsert_items(self.conn, a["id"], [

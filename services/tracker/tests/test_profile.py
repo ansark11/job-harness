@@ -95,6 +95,29 @@ class ResumeTests(TempDb):
         resumes.refresh(self.conn, rec["id"])
         self.assertIn("card-issuing", Path(rec["text_path"]).read_text())
 
+    def test_upload_pdf_but_read_text_from_docx(self):
+        make_pdf(self.dir / "r.pdf", ["Scanned-looking PDF text " * 10])
+        make_docx(self.dir / "r.docx", RESUME_LINES)
+        rec = resumes.add(self.conn, self.dir / "r.pdf", "Jane Doe - Resume", text_from=self.dir / "r.docx")
+        self.assertTrue(rec["file_path"].endswith(".pdf"))
+        self.assertTrue(rec["text_source"].endswith("-text.docx"))
+        self.assertIn("card-issuing", Path(rec["text_path"]).read_text())
+        Path(rec["text_path"]).write_text("stale")
+        resumes.refresh(self.conn, rec["id"])                    # refresh reads the text source
+        self.assertIn("card-issuing", Path(rec["text_path"]).read_text())
+
+    def test_set_text_source_and_remove(self):
+        make_pdf(self.dir / "r.pdf", RESUME_LINES)
+        make_docx(self.dir / "r.docx", RESUME_LINES + ["Docx-only line"])
+        rec = resumes.add(self.conn, self.dir / "r.pdf")
+        out = resumes.set_text_source(self.conn, rec["id"], self.dir / "r.docx")
+        self.assertIn("Docx-only line", Path(out["text_path"]).read_text())
+        gone = resumes.remove(self.conn, rec["id"])
+        self.assertEqual(gone["removed"], rec["id"])
+        self.assertFalse(Path(rec["file_path"]).exists())
+        with self.assertRaises(store.TrackerError):
+            resumes.get(self.conn, rec["id"])
+
     def test_same_file_twice_returns_existing(self):
         make_docx(self.dir / "a.docx", RESUME_LINES)
         first = resumes.add(self.conn, self.dir / "a.docx")

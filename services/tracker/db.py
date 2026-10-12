@@ -148,6 +148,11 @@ MIGRATIONS = [
     """
     ALTER TABLE applications ADD COLUMN apply_url TEXT;
     """,
+    # 5: a resume's text can come from a different file than the one uploaded
+    #    (upload the PDF, read the Word version, which extracts more reliably)
+    """
+    ALTER TABLE resumes ADD COLUMN text_source TEXT;
+    """,
 ]
 
 

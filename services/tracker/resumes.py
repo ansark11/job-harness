@@ -1,8 +1,10 @@
 """Resume versions: a stored copy of each file plus its extracted text.
 
-The original file is what gets uploaded to applications; the text is what
-the matcher and answer-drafter read. The first resume added becomes the
-default; adding the same file twice returns the existing record.
+The file is what gets uploaded to applications; the text is what the
+matcher, answer-drafter and form filling read. The text can come from a
+different file (text_source): e.g. upload the PDF but read the Word
+version, which extracts more reliably. The first resume added becomes the
+default; adding the same upload file twice returns the existing record.
 """
 
 import hashlib
@@ -90,10 +92,10 @@ def _pdf_text(path):
 
 def _record(row):
     return {k: row[k] for k in ("id", "name", "file_path", "text_path", "added_at")} | \
-        {"is_default": bool(row["is_default"])}
+        {"is_default": bool(row["is_default"]), "text_source": row["text_source"] or row["file_path"]}
 
 
-def add(conn, src, name=None, make_default=False, now=None):
+def add(conn, src, name=None, make_default=False, text_from=None, now=None):
     src = Path(src).expanduser()
     if not src.is_file():
         raise TrackerError(f"no such file: {src}")
@@ -102,12 +104,13 @@ def add(conn, src, name=None, make_default=False, now=None):
     sha = hashlib.sha256(src.read_bytes()).hexdigest()
     existing = conn.execute("SELECT * FROM resumes WHERE sha256 = ?", (sha,)).fetchone()
     if existing:
+        if text_from:
+            set_text_source(conn, existing["id"], text_from)
         if make_default:
             set_default(conn, existing["id"])
-        return {**_record(conn.execute("SELECT * FROM resumes WHERE id = ?", (existing["id"],)).fetchone()),
-                "already_added": True}
+        return {**get(conn, existing["id"]), "already_added": True}
 
-    text = extract_text(src)
+    text = extract_text(text_from or src)
     rid = uuid.uuid4().hex[:8]
     d = resume_dir()
     d.mkdir(parents=True, exist_ok=True)
@@ -117,18 +120,54 @@ def add(conn, src, name=None, make_default=False, now=None):
     text_path.write_text(text)
     with conn:
         first = conn.execute("SELECT COUNT(*) FROM resumes").fetchone()[0] == 0
-        conn.execute("INSERT INTO resumes VALUES (?, ?, ?, ?, ?, 0, ?)",
+        conn.execute("INSERT INTO resumes (id, name, file_path, text_path, sha256, is_default, added_at) "
+                     "VALUES (?, ?, ?, ?, ?, 0, ?)",
                      (rid, name or src.stem, str(file_path), str(text_path), sha, _iso(now or utcnow())))
     if first or make_default:
         set_default(conn, rid)
+    if text_from:
+        _store_text_source(conn, rid, text_from)
     rec = get(conn, rid)
     return {**rec, "characters": len(text), "preview": text[:300]}
+
+
+def _store_text_source(conn, rid, src):
+    src = Path(src).expanduser()
+    dest = resume_dir() / f"{rid}-text{src.suffix.lower()}"
+    shutil.copy2(src, dest)
+    with conn:
+        conn.execute("UPDATE resumes SET text_source = ? WHERE id = ?", (str(dest), rid))
+
+
+def set_text_source(conn, rid, src):
+    """Read this resume's text from another file (the upload file is unchanged)."""
+    rec = get(conn, rid)
+    src = Path(src).expanduser()
+    if not src.is_file():
+        raise TrackerError(f"no such file: {src}")
+    text = extract_text(src)
+    _store_text_source(conn, rid, src)
+    Path(rec["text_path"]).write_text(text)
+    return {**get(conn, rid), "characters": len(text), "preview": text[:300]}
+
+
+def remove(conn, rid):
+    """Forget a resume version. Refused if any application used it."""
+    rec = get(conn, rid)
+    used = conn.execute("SELECT COUNT(*) FROM applications WHERE resume_id = ?", (rid,)).fetchone()[0]
+    if used:
+        raise TrackerError(f"resume {rid} was used by {used} application(s); it's kept for their record")
+    with conn:
+        conn.execute("DELETE FROM resumes WHERE id = ?", (rid,))
+    for p in {rec["file_path"], rec["text_path"], rec["text_source"]}:
+        Path(p).unlink(missing_ok=True)
+    return {"removed": rid, "was_default": rec["is_default"]}
 
 
 def refresh(conn, rid):
     """Re-extract a stored resume's text (after an extraction fix)."""
     rec = get(conn, rid)
-    text = extract_text(rec["file_path"])
+    text = extract_text(rec["text_source"])
     Path(rec["text_path"]).write_text(text)
     return {**rec, "characters": len(text), "preview": text[:300]}
 

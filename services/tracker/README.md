@@ -34,13 +34,18 @@ python3 tracker.py run last-success --kind daily_search
 ## Resumes
 
 ```bash
-tracker.py resume add ~/Downloads/resume.pdf --name "PM 2026" [--default]
-tracker.py resume list | show <id> [--text] | default [<id>]
+tracker.py resume add resume.pdf --name "Jane Doe - Resume" --text-from resume.docx [--default]
+tracker.py resume text <id> resume.docx        # change where an existing resume's text comes from
+tracker.py resume list | show <id> [--text] | default [<id>] | refresh <id> | remove <id>
 ```
 
-A copy of the file is kept (it's what gets uploaded) plus its extracted text
-(what the matcher and drafter read). PDF, DOCX, TXT or MD. The first resume
-added is the default; the daily search scores fit against the default.
+Each resume version has an **upload file** (what employers receive, named
+`<name>.<ext>`; must be PDF or DOCX to apply with) and a **text source**
+(what the matcher, drafter and form filling read). They can differ: upload
+the PDF, read the Word version, which extracts more reliably. Without
+`--text-from`, the text comes from the upload file. The first resume added
+is the default; the daily search scores fit against the default. `remove`
+refuses a resume an application used.
 
 ## Answer bank and inbox
 
@@ -57,7 +62,8 @@ tracker.py inbox resolve 3 --key sponsorship_us          # same as an existing k
 tracker.py inbox answer 4 --answer "Yes"                  # a genuinely new question
 ```
 
-- Standard keys: contact details, work authorization and sponsorship
+- Standard keys: contact details, background (current company and title,
+  school, degree, field of study), work authorization and sponsorship
   (Canada and US separately), relocation, notice period, salary
   expectations (CAD and USD), US EEO and Canadian employment equity
   self-identification, each with "prefer not to say" options.
