@@ -57,7 +57,7 @@ class MatchPostingsTests(unittest.TestCase):
         self.model = CannedModel({
             "Senior PM, Payments": facts(fit_score=70),
             "Senior PM, Checkout": facts(fit_score=60),
-            "Senior PM, Snacks": facts(industry="cpg", industry_reason="Snack maker."),
+            "Senior PM, Snacks": facts(industry="cpg", industry_reason="Snack maker.", role_domain="other"),
             "Senior PM, Older but great": facts(fit_score=95),
         })
 

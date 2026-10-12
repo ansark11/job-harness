@@ -11,12 +11,13 @@ DESCRIPTION_LIMIT = 14000
 RESUME_LIMIT = 12000
 
 INDUSTRIES = ["fintech_payments", "big_tech", "health_tech", "ecommerce_platform", "cpg", "retailer", "other"]
+DOMAINS = ["fintech_payments", "health_tech", "ecommerce_platform", "other"]
 
 SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["work_mode", "employment_type", "contract_months", "seniority", "pay_ranges",
-                 "industry", "industry_reason", "fit_score", "fit_reasons", "concerns"],
+                 "industry", "industry_reason", "role_domain", "fit_score", "fit_reasons", "concerns"],
     "properties": {
         "work_mode": {"type": "string", "enum": ["remote", "hybrid", "onsite", "unknown"]},
         "employment_type": {"type": "string", "enum": ["full_time", "contract", "part_time", "unknown"]},
@@ -34,6 +35,7 @@ SCHEMA = {
             }}},
         "industry": {"type": "string", "enum": INDUSTRIES},
         "industry_reason": {"type": "string"},
+        "role_domain": {"type": "string", "enum": DOMAINS},
         "fit_score": {"type": "integer"},
         "fit_reasons": {"type": "array", "items": {"type": "string"}},
         "concerns": {"type": "array", "items": {"type": "string"}},
@@ -58,6 +60,10 @@ Facts (use "unknown" or null when the posting doesn't say; never guess):
   (e.g. Walmart, Loblaw, 7-Eleven, a pharmacy chain) is a retailer, even when the role is digital.
   cpg means consumer packaged goods makers (e.g. P&G, PepsiCo, Unilever).
   industry_reason: one short sentence.
+- role_domain: what the product THIS ROLE owns is about, whatever the company does:
+  fintech_payments (payments, cards, banking, lending, money movement, fraud), health_tech,
+  ecommerce_platform (checkout, merchants, marketplaces), or other.
+  E.g. a PM owning card processing at a B2B SaaS company is fintech_payments.
 
 Fit:
 - fit_score: 0-100, how well the resume matches this role's requirements and domain.
@@ -92,6 +98,8 @@ def validate(facts):
         raise llm.ModelError(f"model reply missing {missing}")
     if facts["industry"] not in INDUSTRIES:
         raise llm.ModelError(f"unknown industry {facts['industry']!r}")
+    if facts["role_domain"] not in DOMAINS:
+        raise llm.ModelError(f"unknown role domain {facts['role_domain']!r}")
     facts["fit_score"] = max(0, min(100, int(facts["fit_score"])))
     facts["pay_ranges"] = [r for r in facts["pay_ranges"] if r.get("min") or r.get("max")]
     return facts

@@ -22,7 +22,10 @@ The model proposes, code decides:
    - Pay (only if listed): the range for the posting's city, else the highest
      band, annualized and converted with `fx_to_cad`; rejected below
      `min_total_cad × (1 − tolerance)`, flagged if just under.
-   - Industry in `industries`; `big_tech_companies` overrides the model's category.
+   - Industry: a CPG or retailer company is always rejected; otherwise the
+     company's industry **or the domain of the product the role owns**
+     (`role_domain`: a payments PM at a SaaS company counts as payments) must
+     be in `industries`. `big_tech_companies` overrides the model's category.
    - A seniority word in the title is enough; otherwise the model's level must be senior+.
 
 Anything the model couldn't determine (no pay, unknown work mode, contract

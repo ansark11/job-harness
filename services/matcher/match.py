@@ -28,7 +28,7 @@ import runlog
 
 HERE = Path(__file__).resolve().parent
 CACHE_PATH = HERE / "data" / "extractions.json"
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 FRESH_HOURS = 24
 WORKERS = 4
 
@@ -113,7 +113,7 @@ def match_postings(postings, cfg, resume, now, post=None, cache=None, run=None):
             matches.append({**p, "match": {"score": facts["fit_score"], "reasons": facts["fit_reasons"],
                                            "concerns": facts["concerns"], "flags": flags, "facts": facts,
                                            "pay": derived["pay"], "industry": derived["industry"],
-                                           "fresh": fresh}})
+                                           "role_domain": derived["role_domain"], "fresh": fresh}})
 
     matches.sort(key=lambda m: (m["match"]["fresh"], m["match"]["score"] if m["match"]["score"] is not None
                                 else -1), reverse=True)

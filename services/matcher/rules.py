@@ -142,12 +142,18 @@ def decide(posting, facts, cfg):
         elif pay["max_cad"] < floor:
             flags.append(f"pay tops out just under target (~{pay['max_cad']:,} CAD)")
 
-    # Industry: the company allowlist overrides the model's category.
+    # Industry: excluded company types (CPG, retailers) always lose; otherwise the company's
+    # industry or the domain of the product this role owns must be on the list. The Big Tech
+    # company allowlist overrides the model's category.
     industry = facts["industry"]
+    domain = facts.get("role_domain", "other")
     company = posting.get("company") or ""
     if any(re.fullmatch(rf"{re.escape(c)}(\b.*)?", company, re.I) for c in cfg.get("big_tech_companies", [])):
         industry = "big_tech"
-    if industry not in cfg["industries"]:
-        reasons.append(f"industry is {industry.replace('_', ' ')} ({facts['industry_reason']})")
+    if industry in cfg.get("excluded_industries", ["cpg", "retailer"]):
+        reasons.append(f"company is a {industry.replace('_', ' ')} ({facts['industry_reason']})")
+    elif industry not in cfg["industries"] and domain not in cfg["industries"]:
+        reasons.append(f"industry is {industry.replace('_', ' ')} and the role isn't in a target domain "
+                       f"({facts['industry_reason']})")
 
-    return reasons, flags, {"pay": pay, "industry": industry}
+    return reasons, flags, {"pay": pay, "industry": industry, "role_domain": domain}

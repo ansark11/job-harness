@@ -22,7 +22,7 @@ NOW = datetime(2026, 10, 11, 22, 0, tzinfo=timezone.utc)
 def facts(**over):
     base = {"work_mode": "hybrid", "employment_type": "full_time", "contract_months": None,
             "seniority": "senior", "pay_ranges": [], "industry": "fintech_payments",
-            "industry_reason": "Payments processor.", "fit_score": 80, "fit_reasons": ["a"], "concerns": []}
+            "industry_reason": "Payments processor.", "role_domain": "fintech_payments", "fit_score": 80, "fit_reasons": ["a"], "concerns": []}
     return {**base, **over}
 
 
@@ -113,15 +113,21 @@ class DecideTests(unittest.TestCase):
         self.assertTrue(any("just under" in f for f in flags))
 
     def test_retailer_rejected_but_ecommerce_platform_kept(self):
-        self.assertIn("industry is retailer", self.decide(f=facts(industry="retailer"))[0][0])
+        self.assertIn("company is a retailer", self.decide(f=facts(industry="retailer"))[0][0])
         self.assertEqual(self.decide(posting(company="Shopify"), facts(industry="ecommerce_platform"))[0], [])
 
+    def test_payments_role_at_other_company_kept_but_not_at_a_retailer(self):
+        self.assertEqual(self.decide(posting(company="B2B Saas Company"), facts(industry="other"))[0], [])
+        reasons = self.decide(posting(company="Walmart"), facts(industry="retailer"))[0]
+        self.assertIn("company is a retailer", reasons[0])
+        self.assertTrue(self.decide(f=facts(industry="other", role_domain="other"))[0])
+
     def test_big_tech_allowlist_overrides_model_category(self):
-        reasons, _, derived = self.decide(posting(company="Amazon"), facts(industry="other"))
+        reasons, _, derived = self.decide(posting(company="Amazon"), facts(industry="other", role_domain="other"))
         self.assertEqual(reasons, [])
         self.assertEqual(derived["industry"], "big_tech")
         # Prefix match only on a word boundary: "Metaview" is not Meta.
-        self.assertTrue(self.decide(posting(company="Metaview"), facts(industry="other"))[0])
+        self.assertTrue(self.decide(posting(company="Metaview"), facts(industry="other", role_domain="other"))[0])
 
     def test_untitled_seniority_uses_model_level(self):
         p = posting(title="Product Manager, Payments")
