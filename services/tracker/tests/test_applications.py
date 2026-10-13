@@ -42,6 +42,16 @@ class ApplicationTests(TempDb):
         with self.assertRaisesRegex(store.TrackerError, "isn't a PDF or DOCX"):
             applications.create(self.conn, "1", txt["id"])
 
+    def test_apply_through_another_citys_posting(self):
+        store.ingest(self.conn, [m("1b", location="Austin, TX", apply_type="external", url="https://x/1b",
+                                   description="Own payouts.", title="Senior PM 1")], NOW)
+        self.assertEqual([l["posting_id"] for l in store.get(self.conn, "1")["locations"]], ["1", "1b"])
+        with self.assertRaisesRegex(store.TrackerError, "isn't one of this role's postings"):
+            applications.create(self.conn, "1", posting_id="nope")
+        a = applications.create(self.conn, "1", posting_id="1b")
+        self.assertEqual((a["job"]["id"], a["job"]["location"], a["job"]["apply_type"]), ("1b", "Austin, TX", "external"))
+        self.assertEqual(applications.packet(self.conn, a["id"])["job"]["url"], "https://x/1b")
+
     def test_resume_used_by_an_application_cant_be_removed(self):
         applications.create(self.conn, "1")
         with self.assertRaisesRegex(store.TrackerError, "used by 1 application"):

@@ -103,6 +103,59 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(last["stats"], {"added": 3})
 
 
+class LocationMergeTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.conn = db.connect(Path(self.tmp.name) / "jobs.db")
+
+    def tearDown(self):
+        self.conn.close()
+        self.tmp.cleanup()
+
+    def role(self, job_id, location, score, desc="Own payouts."):
+        return m(job_id, score=score, title="Staff PM, Payments", company="Stripe", location=location,
+                 description=desc)
+
+    def test_same_role_in_two_cities_is_one_opportunity_best_score_main(self):
+        r = store.ingest(self.conn, [self.role("sf", "San Francisco, CA", 74), self.role("ny", "New York, NY", 78)], NOW)
+        self.assertEqual((r["added"], r["merged"]), (["ny"], ["sf"]))
+        items = store.list_opportunities(self.conn, "new")
+        self.assertEqual([(i["id"], i["locations"]) for i in items], [("ny", ["New York, NY", "San Francisco, CA"])])
+        locs = store.get(self.conn, "ny")["locations"]
+        self.assertEqual([(l["posting_id"], l["main"]) for l in locs], [("ny", True), ("sf", False)])
+        again = store.ingest(self.conn, [self.role("sf", "San Francisco, CA", 74)], NOW)     # idempotent
+        self.assertEqual((again["skipped"], again["merged"]), (["sf"], []))
+
+    def test_later_city_joins_even_after_review(self):
+        store.ingest(self.conn, [self.role("ny", "New York, NY", 78)], NOW)
+        store.set_status(self.conn, "ny", "kept", NOW)
+        r = store.ingest(self.conn, [self.role("sea", "Seattle, WA", 70)], NOW)
+        self.assertEqual(r["merged"], ["sea"])
+        self.assertEqual(len(store.get(self.conn, "ny")["locations"]), 2)
+
+    def test_different_description_is_a_different_role(self):
+        r = store.ingest(self.conn, [self.role("a", "Austin, TX", 80), self.role("b", "Dallas, TX", 70, "Other.")], NOW)
+        self.assertEqual(sorted(r["added"]), ["a", "b"])
+
+    def test_dedupe_merges_existing_unreviewed_only(self):
+        # Rows stored before merging existed: simulate by clearing role_key and the merge.
+        for i, (jid, loc, sc) in enumerate([("p1", "Purchase, NY", 88), ("p2", "O'Fallon, MO", 86)]):
+            store.ingest(self.conn, [self.role(jid, loc, sc, desc=f"tmp{i}")], NOW)
+        with self.conn:
+            self.conn.execute("UPDATE opportunities SET role_key = NULL, data = json_set(data, '$.description', 'Same.')")
+        store.ingest(self.conn, [m("g1", title="PM", company="Google", description="X"),
+                                 m("g2", title="PM", company="Google", description="X ")], NOW)  # merged on ingest
+        with self.conn:
+            self.conn.execute("DELETE FROM opportunity_locations")
+            self.conn.execute("INSERT INTO opportunities (id, source, data, status, fetched_at) "
+                              "SELECT 'g2', source, data, 'discarded', fetched_at FROM opportunities WHERE id = 'g1'")
+            self.conn.execute("UPDATE opportunities SET role_key = NULL")
+        out = store.dedupe(self.conn, NOW)
+        self.assertEqual(out["merged"], [{"posting": "p2", "into": "p1"}])      # Google pair has a reviewed row
+        self.assertEqual([l["location"] for l in store.get(self.conn, "p1")["locations"]],
+                         ["Purchase, NY", "O'Fallon, MO"])
+
+
 class CliTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

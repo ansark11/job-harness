@@ -7,6 +7,7 @@ Opportunities and runs
     tracker.py show <id>
     tracker.py keep|discard <id> [<id> ...]
     tracker.py expire
+    tracker.py dedupe                           # merge one role posted in several cities (unreviewed only)
     tracker.py run start --kind K | finish <run id> --status ok|failed [--stats JSON] | last-success --kind K
 
 Resumes
@@ -31,7 +32,7 @@ Inbox (questions an application asked that the bank couldn't answer)
     tracker.py inbox dismiss <id>
 
 Applications (driven by workflows/apply/run.py; these are the data and the review actions)
-    tracker.py application create <opportunity id> [--resume <id>]
+    tracker.py application create <opportunity id> [--resume <id>] [--posting <city's posting id>]
     tracker.py application list [--status S] | show <id> | packet <id>
     tracker.py application approve <id> <item>             # item = key or its number in `show`
     tracker.py application edit <id> <item> --value V | --value-file F
@@ -77,6 +78,7 @@ def build_parser():
         p = sub.add_parser(name)
         p.add_argument("ids", nargs="+")
     sub.add_parser("expire", help=f"expire postings unreviewed for {store.EXPIRE_DAYS} days")
+    sub.add_parser("dedupe", help="merge one role posted in several cities")
 
     p = sub.add_parser("run", help="record daily runs")
     s = p.add_subparsers(dest="sub", required=True)
@@ -160,6 +162,7 @@ def build_parser():
     r = s.add_parser("create")
     r.add_argument("opportunity")
     r.add_argument("--resume")
+    r.add_argument("--posting", help="apply through this city's posting (see `show`); default: the main one")
     r = s.add_parser("list")
     r.add_argument("--status", choices=applications.STATUSES)
     for name in ("show", "packet"):
@@ -217,6 +220,10 @@ def cmd_opportunities(conn, args, run):
         for r in results:
             run.event("status_change", **r)
         return {"results": results}
+    if args.cmd == "dedupe":
+        out = store.dedupe(conn)
+        run.event("dedupe", merged=len(out["merged"]))
+        return out
     if args.cmd == "expire":
         ids = store.expire(conn)
         run.event("expired", count=len(ids), ids=ids)
@@ -322,7 +329,7 @@ def cmd_inbox(conn, args, run):
 
 def cmd_application(conn, args, run):
     if args.sub == "create":
-        app = applications.create(conn, args.opportunity, args.resume)
+        app = applications.create(conn, args.opportunity, args.resume, posting_id=args.posting)
         run.event("application_created", id=app["id"], opportunity=args.opportunity, existing=app.get("existing", False))
         return app
     if args.sub == "list":

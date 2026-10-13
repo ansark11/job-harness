@@ -153,6 +153,21 @@ MIGRATIONS = [
     """
     ALTER TABLE resumes ADD COLUMN text_source TEXT;
     """,
+    # 6: one role posted once per city is one opportunity with several locations
+    """
+    ALTER TABLE opportunities ADD COLUMN role_key TEXT;
+    CREATE INDEX opportunities_role_key ON opportunities (role_key);
+    CREATE TABLE opportunity_locations (
+        posting_id     TEXT PRIMARY KEY,     -- the other city's LinkedIn job id
+        opportunity_id TEXT NOT NULL REFERENCES opportunities (id),
+        location       TEXT,
+        url            TEXT,
+        apply_type     TEXT,
+        data           TEXT NOT NULL,        -- that posting's full posting + match JSON
+        added_at       TEXT NOT NULL
+    );
+    ALTER TABLE applications ADD COLUMN posting_id TEXT;    -- which city's posting it applies through
+    """,
 ]
 
 

@@ -132,7 +132,7 @@ def run_daily(args, call, now, run, notifier=notify):
         postings = json.loads((work / "postings.json").read_text())
         matches = json.loads((work / "matches.json").read_text())
         stats = {"postings": len(postings["postings"]), "matches": len(matches["matches"]),
-                 "rejected": len(matches["rejected"]), "added": len(ingest["added"]),
+                 "rejected": len(matches["rejected"]), "added": len(ingest["added"]), "merged": len(ingest.get("merged", [])),
                  "expired": len(ingest["expired"]), "window_seconds": postings["window_seconds"]}
     except (StepError, OSError, json.JSONDecodeError, KeyError) as e:
         tracker_json(call, "run", "finish", rec["id"], "--status", "failed", "--stats", json.dumps({"error": str(e)}))

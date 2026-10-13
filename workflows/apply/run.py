@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Apply to a kept opportunity: agent -> resolve unknown fields -> agent again, until done or blocked on you.
 
-    python3 workflows/apply/run.py start <opportunity id> [--resume <id>] [--dry-run] [--headless]
+    python3 workflows/apply/run.py start <opportunity id> [--resume <id>] [--posting <city's id>] [--dry-run] [--headless]
     python3 workflows/apply/run.py continue <application id> [--dry-run] [--headless]
     python3 workflows/apply/run.py submit <application id> [--headless]     # approve a filled portal application
     python3 workflows/apply/run.py regenerate <application id> <item> [--steer "..."]
@@ -351,6 +351,7 @@ def main(argv=None, call=None):
     start = sub.add_parser("start")
     start.add_argument("opportunity")
     start.add_argument("--resume")
+    start.add_argument("--posting", help="apply through this city's posting (see tracker.py show)")
     cont = sub.add_parser("continue")
     cont.add_argument("application")
     for p in (start, cont):
@@ -371,7 +372,8 @@ def main(argv=None, call=None):
         call = call or make_caller(run)
         try:
             if args.cmd == "start":
-                create = ["application", "create", args.opportunity] + (["--resume", args.resume] if args.resume else [])
+                create = ["application", "create", args.opportunity] + (["--resume", args.resume] if args.resume else []) \
+                    + (["--posting", args.posting] if args.posting else [])
                 app_id = call("tracker", create)["id"]
             else:
                 app_id = args.application

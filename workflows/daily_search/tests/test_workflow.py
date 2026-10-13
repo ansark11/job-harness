@@ -111,7 +111,7 @@ class RunDailyTests(unittest.TestCase):
         search_args = svc.calls[2][1]
         self.assertEqual(search_args[search_args.index("--since") + 1], last["started_at"])
         self.assertEqual(svc.finished[0], "ok")
-        self.assertEqual(stats, {"postings": 2, "matches": 1, "rejected": 1, "added": 1, "expired": 0,
+        self.assertEqual(stats, {"postings": 2, "matches": 1, "rejected": 1, "added": 1, "merged": 0, "expired": 0,
                                  "window_seconds": 86400})
         self.assertEqual(self.notes, [("Job search", "1 new match to review")])
 

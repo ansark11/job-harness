@@ -16,6 +16,7 @@ import uuid
 
 import bank
 import resumes
+import store
 from store import TrackerError, _iso, utcnow
 
 STATUSES = ("queued", "in_progress", "needs_input", "ready", "submitted", "failed")
@@ -38,8 +39,9 @@ def _item(row):
     return out
 
 
-def create(conn, opportunity_id, resume_id=None, now=None):
-    """One live application per opportunity: an unfinished or submitted one is returned instead."""
+def create(conn, opportunity_id, resume_id=None, now=None, posting_id=None):
+    """One live application per opportunity: an unfinished or submitted one is returned instead.
+    posting_id picks which city's posting to apply through (default: the main one)."""
     now = now or utcnow()
     opp = conn.execute("SELECT * FROM opportunities WHERE id = ?", (opportunity_id,)).fetchone()
     if opp is None:
@@ -50,15 +52,20 @@ def create(conn, opportunity_id, resume_id=None, now=None):
                             "ORDER BY created_at DESC LIMIT 1", (opportunity_id,)).fetchone()
     if existing:
         return {**get(conn, existing["id"]), "existing": True}
+    locs = {loc["posting_id"]: loc for loc in store.locations(conn, opportunity_id)}
+    posting_id = posting_id or opportunity_id
+    if posting_id not in locs:
+        raise TrackerError(f"{posting_id} isn't one of this role's postings: {', '.join(locs)}")
     resume = resumes.get(conn, resume_id) if resume_id else resumes.default(conn)
     if not resume["file_path"].lower().endswith(UPLOADABLE):
         raise TrackerError(f"resume {resume['id']} ({resume['name']}) isn't a PDF or DOCX; "
                            "application portals only accept those. Add one with resume add")
     app_id = uuid.uuid4().hex[:10]
     with conn:
-        conn.execute("INSERT INTO applications (id, opportunity_id, resume_id, apply_type, created_at, updated_at) "
-                     "VALUES (?, ?, ?, ?, ?, ?)",
-                     (app_id, opportunity_id, resume["id"], opp["apply_type"], _iso(now), _iso(now)))
+        conn.execute("INSERT INTO applications (id, opportunity_id, resume_id, apply_type, posting_id, created_at, "
+                     "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                     (app_id, opportunity_id, resume["id"], locs[posting_id]["apply_type"], posting_id, _iso(now),
+                      _iso(now)))
     return get(conn, app_id)
 
 
@@ -70,8 +77,10 @@ def get(conn, app_id):
     opp = conn.execute("SELECT id, title, company, url, apply_type, data FROM opportunities WHERE id = ?",
                        (row["opportunity_id"],)).fetchone()
     data = json.loads(opp["data"])
-    app["job"] = {"id": opp["id"], "title": opp["title"], "company": opp["company"], "url": opp["url"],
-                  "apply_type": opp["apply_type"], "location": data.get("location"),
+    locs = {loc["posting_id"]: loc for loc in store.locations(conn, opp["id"])}
+    loc = locs.get(row["posting_id"] or opp["id"]) or locs[opp["id"]]
+    app["job"] = {"id": loc["posting_id"], "title": opp["title"], "company": opp["company"], "url": loc["url"],
+                  "apply_type": loc["apply_type"], "location": loc["location"],
                   "description": data.get("description")}
     app["resume"] = resumes.get(conn, row["resume_id"])
     app["items"] = items(conn, app_id)

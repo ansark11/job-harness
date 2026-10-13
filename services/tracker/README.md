@@ -24,6 +24,12 @@ python3 tracker.py run last-success --kind daily_search
 - **Ingest is idempotent** on the LinkedIn id. A posting you've already kept
   or discarded is never reset; one still unreviewed gets its data and score
   refreshed but keeps its first fetch time.
+- **One role, several cities:** a posting with the same company, title and
+  description as one already stored joins it as an extra location instead of
+  a new card (`show` lists them; the best-scoring city is the main posting).
+  `application create --posting <id>` applies through another city's posting.
+  `dedupe` merges such duplicates stored before this existed, unless you've
+  already kept or discarded one of them.
 - **Expiry:** postings unreviewed 7 days after they were fetched become
   `expired`. Runs on every ingest and with `expire`.
 - **Status changes:** new → kept | discarded | expired; kept ↔ discarded;
