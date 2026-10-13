@@ -99,9 +99,13 @@ def decide(posting, facts, cfg):
     loc = posting.get("location") or ""
 
     # Product management at all: titles say "product" for program and implementation jobs too.
+    # Recall over precision: only a clearly different job is rejected; a judgment call
+    # (program-flavoured PM roles, thin postings) passes with a flag for you to decide.
     role_type = facts.get("role_type", "product_management")
     if role_type == "unclear":
         flags.append("couldn't confirm it's a product management role")
+    elif role_type == "program_or_delivery":
+        flags.append(f"may be program delivery rather than product management ({facts.get('role_type_reason', '')})")
     elif role_type != "product_management":
         reasons.append(f"not a product management role: {facts['role_type'].replace('_', ' ')} "
                        f"({facts.get('role_type_reason', '')})")

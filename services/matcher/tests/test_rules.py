@@ -130,11 +130,14 @@ class DecideTests(unittest.TestCase):
         # Prefix match only on a word boundary: "Metaview" is not Meta.
         self.assertTrue(self.decide(posting(company="Metaview"), facts(industry="other", role_domain="other"))[0])
 
-    def test_program_delivery_titled_product_is_rejected(self):
+    def test_program_delivery_is_flagged_other_jobs_rejected(self):
         p = posting(title="HCM Strategy, Data Program Product Management, Vice President", company="Goldman Sachs")
-        reasons = self.decide(p, facts(role_type="program_or_delivery",
-                                       role_type_reason="Runs an HR system rollout."))[0]
-        self.assertIn("not a product management role: program or delivery", reasons[0])
+        reasons, flags, _ = self.decide(p, facts(role_type="program_or_delivery",
+                                                 role_type_reason="Runs an HR system rollout."))
+        self.assertEqual(reasons, [])
+        self.assertTrue(any(f.startswith("may be program delivery") for f in flags))
+        reasons = self.decide(f=facts(role_type="other", role_type_reason="A data analyst job."))[0]
+        self.assertIn("not a product management role: other", reasons[0])
 
     def test_unclear_role_type_and_missing_description_only_flag(self):
         reasons, flags, _ = self.decide(posting(description=""), facts(role_type="unclear"))

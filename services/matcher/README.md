@@ -28,6 +28,12 @@ The model proposes, code decides:
      be in `industries`. `big_tech_companies` overrides the model's category.
    - A seniority word in the title is enough; otherwise the model's level must be senior+.
 
+**Recall over precision** (your preference): a few non-matches getting
+through is fine; missing a true match isn't. Rejections are reserved for
+clear-cut facts; judgment calls flag instead. Role type: a job that's clearly
+something else (analyst, engineering, sales) is rejected; one that may be
+program delivery rather than product management is flagged.
+
 Anything the model couldn't determine (no pay, unknown work mode, contract
 length not stated) passes with a **flag** rather than rejecting. A posting
 the model failed on is kept, flagged "not scored".
