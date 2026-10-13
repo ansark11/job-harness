@@ -190,6 +190,8 @@ def group_by_fetch_date(items, now=None, tz=None):
         groups.setdefault(d, []).append(it)
     out = []
     for d in sorted(groups, reverse=True):
+        # Within a day: posted in the last 24h first, then best fit.
+        groups[d].sort(key=lambda i: (not i["fresh"], -(i["score"] if i["score"] is not None else -1)))
         age = (today - d).days
         label = "Today" if age == 0 else "Yesterday" if age == 1 else d.strftime("%a %b %-d")
         out.append({"date": d.isoformat(), "label": label, "expires_in_days": max(0, EXPIRE_DAYS - age),

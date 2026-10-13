@@ -3,7 +3,7 @@
 
 Opportunities and runs
     tracker.py ingest matches.json [--run-id ID]
-    tracker.py list [--status new|kept|discarded|expired] [--group-by fetch-date]
+    tracker.py list [--status new|kept|discarded|expired] [--group-by fetch-date] [--pretty]
     tracker.py show <id>
     tracker.py keep|discard <id> [<id> ...]
     tracker.py expire
@@ -72,6 +72,7 @@ def build_parser():
     p = sub.add_parser("list")
     p.add_argument("--status", choices=["new", "kept", "discarded", "expired"])
     p.add_argument("--group-by", choices=["fetch-date"])
+    p.add_argument("--pretty", action="store_true", help="readable table instead of JSON")
     p = sub.add_parser("show")
     p.add_argument("id")
     for name in ("keep", "discard"):
@@ -211,6 +212,8 @@ def cmd_opportunities(conn, args, run):
         return result
     if args.cmd == "list":
         items = store.list_opportunities(conn, args.status)
+        if args.pretty:
+            return Text(pretty_list(store.group_by_fetch_date(items)))
         return {"groups": store.group_by_fetch_date(items)} if args.group_by else {"items": items}
     if args.cmd == "show":
         return store.get(conn, args.id)
@@ -233,6 +236,27 @@ def cmd_opportunities(conn, args, run):
     if args.sub == "finish":
         return store.run_finish(conn, args.id, args.status, json.loads(args.stats))
     return {"last_success": store.last_success(conn, args.kind)}
+
+
+class Text(str):
+    """A command result to print as-is rather than as JSON."""
+
+
+def pretty_list(groups):
+    lines = []
+    for g in groups:
+        expiry = f" · expires in {g['expires_in_days']} days" if g["items"][0]["status"] == "new" else ""
+        lines.append(f"\n== {g['label']} ({len(g['items'])}){expiry}")
+        for i in g["items"]:
+            score = "  -" if i["score"] is None else f"{i['score']:>3}"
+            apply = "Easy Apply" if i["apply_type"] == "easy" else "portal" if i["apply_type"] == "external" else "?"
+            lines.append(f"  {i['id']}  {score}  {(i['title'] or '')[:46]:<46}  {(i['company'] or '')[:22]:<22}  "
+                         f"{apply:<10}  {' / '.join(i['locations'])[:44]}")
+            if i["flags"]:
+                lines.append(f"  {'':10}       ⚑ {', '.join(i['flags'])}")
+    if not lines:
+        return "Nothing here."
+    return "\n".join(lines).lstrip("\n") + "\n\nid  fit  role  company  how to apply  location(s)"
 
 
 def cmd_resume(conn, args, run):
@@ -392,7 +416,7 @@ def main(argv=None):
             run.warn("bad_request", error=str(e))
         finally:
             conn.close()
-        print(json.dumps(out, indent=2))
+        print(out if isinstance(out, Text) else json.dumps(out, indent=2))
         run.finish(code)
         return code
 

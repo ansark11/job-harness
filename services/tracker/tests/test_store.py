@@ -185,6 +185,19 @@ class CliTests(unittest.TestCase):
         self.assertEqual((out["status"], out["match"]["reasons"]), ("kept", ["r"]))
         self.assertEqual(self.cli("list", "--status", "kept")[1]["items"][0]["id"], "1")
 
+    def test_pretty_list_is_readable_text(self):
+        path = Path(self.tmp.name) / "matches.json"
+        path.write_text(json.dumps({"matches": [m("1"), m("2", score=None)]}))
+        self.cli("ingest", str(path))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            tracker.main(["list", "--status", "new", "--pretty"])
+        text = out.getvalue()
+        self.assertIn("== Today (2)", text)
+        self.assertIn("1   80  Senior PM 1", text)
+        self.assertIn("Easy Apply", text)
+        self.assertIn("⚑ pay not listed", text)
+
     def test_errors_exit_1_with_json(self):
         code, out = self.cli("keep", "missing")
         self.assertEqual(code, 1)
