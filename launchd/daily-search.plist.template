@@ -5,8 +5,12 @@
 <dict>
     <key>Label</key>
     <string>__LABEL__</string>
+    <!-- caffeinate -i keeps the Mac from idle-sleeping until the run ends: a run that
+         sleeps midway stalls its network calls for hours. (Closing the lid still sleeps.) -->
     <key>ProgramArguments</key>
     <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-i</string>
         <string>__PYTHON__</string>
         <string>__REPO__/workflows/daily_search/run.py</string>
     </array>

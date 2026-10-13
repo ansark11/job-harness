@@ -25,7 +25,10 @@ python3 workflows/daily_search/run.py [--resume resume.txt] [--force] [--max-pag
 ./launchd/uninstall.sh
 ```
 
-Runs at 19:00; if the Mac is asleep then, launchd runs it on wake. Also runs
+Runs at 19:00; if the Mac is asleep then, launchd runs it on wake. The job
+runs under `caffeinate -i`, so the Mac doesn't idle-sleep mid-run (a full run
+takes ~15–25 minutes; closing the lid still sleeps it, and the run resumes
+on wake). Also runs
 at login, to cover a full shutdown; the guard makes extra triggers harmless.
 Loading the agent runs it once immediately. Output goes to
 `workflows/daily_search/logs/launchd.{out,err}.log`.
