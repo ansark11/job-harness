@@ -29,7 +29,7 @@ import runlog
 
 HERE = Path(__file__).resolve().parent
 CACHE_PATH = HERE / "data" / "extractions.json"
-PROMPT_VERSION = 3
+PROMPT_VERSION = 4
 FRESH_HOURS = 24
 WORKERS = 4
 

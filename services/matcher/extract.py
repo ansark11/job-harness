@@ -12,12 +12,14 @@ RESUME_LIMIT = 12000
 
 INDUSTRIES = ["fintech_payments", "big_tech", "health_tech", "ecommerce_platform", "cpg", "retailer", "other"]
 DOMAINS = ["fintech_payments", "health_tech", "ecommerce_platform", "other"]
+ROLE_TYPES = ["product_management", "program_or_delivery", "other", "unclear"]
 
 SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["work_mode", "employment_type", "contract_months", "seniority", "pay_ranges",
-                 "industry", "industry_reason", "role_domain", "fit_score", "fit_reasons", "concerns"],
+                 "industry", "industry_reason", "role_domain", "role_type", "role_type_reason",
+                 "fit_score", "fit_reasons", "concerns"],
     "properties": {
         "work_mode": {"type": "string", "enum": ["remote", "hybrid", "onsite", "unknown"]},
         "employment_type": {"type": "string", "enum": ["full_time", "contract", "part_time", "unknown"]},
@@ -36,6 +38,8 @@ SCHEMA = {
         "industry": {"type": "string", "enum": INDUSTRIES},
         "industry_reason": {"type": "string"},
         "role_domain": {"type": "string", "enum": DOMAINS},
+        "role_type": {"type": "string", "enum": ROLE_TYPES},
+        "role_type_reason": {"type": "string"},
         "fit_score": {"type": "integer"},
         "fit_reasons": {"type": "array", "items": {"type": "string"}},
         "concerns": {"type": "array", "items": {"type": "string"}},
@@ -67,6 +71,14 @@ Facts (use "unknown" or null when the posting doesn't say; never guess):
   credit data, customer identity / KYC / account onboarding), health_tech,
   ecommerce_platform (checkout, merchants, marketplaces), or other.
   E.g. a PM owning card processing at a B2B SaaS company is fintech_payments.
+- role_type: what the job actually is, from its responsibilities, not its title:
+  product_management = owns a product's (or platform's) strategy, discovery, roadmap and
+  prioritization for its users or customers, internal or external;
+  program_or_delivery = runs programs, projects, transformations or vendor-system
+  implementations (e.g. rolling out an HR or ERP system), even if titled "product";
+  other = anything else (analyst, engineering, marketing, sales, operations);
+  unclear = the posting says too little about the job's responsibilities to tell.
+  role_type_reason: one short sentence.
 
 Fit:
 - fit_score: 0-100, how well the resume matches this role's requirements and domain.
@@ -103,6 +115,8 @@ def validate(facts):
         raise llm.ModelError(f"unknown industry {facts['industry']!r}")
     if facts["role_domain"] not in DOMAINS:
         raise llm.ModelError(f"unknown role domain {facts['role_domain']!r}")
+    if facts["role_type"] not in ROLE_TYPES:
+        raise llm.ModelError(f"unknown role type {facts['role_type']!r}")
     facts["fit_score"] = max(0, min(100, int(facts["fit_score"])))
     facts["pay_ranges"] = [r for r in facts["pay_ranges"] if r.get("min") or r.get("max")]
     return facts

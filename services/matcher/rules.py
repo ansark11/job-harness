@@ -94,7 +94,17 @@ def decide(posting, facts, cfg):
     """(reasons to reject, flags). Empty reasons = match."""
     reasons, flags = [], []
     title = posting.get("title") or ""
+    if not posting.get("description"):
+        flags.append("no description: LinkedIn didn't return the posting's details")
     loc = posting.get("location") or ""
+
+    # Product management at all: titles say "product" for program and implementation jobs too.
+    role_type = facts.get("role_type", "product_management")
+    if role_type == "unclear":
+        flags.append("couldn't confirm it's a product management role")
+    elif role_type != "product_management":
+        reasons.append(f"not a product management role: {facts['role_type'].replace('_', ' ')} "
+                       f"({facts.get('role_type_reason', '')})")
 
     # Seniority: a senior word in the title is enough; otherwise trust the posting's scope.
     if not re.search(cfg["title_seniority"], title, re.I):

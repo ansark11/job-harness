@@ -78,6 +78,7 @@ def build_parser():
     for name in ("keep", "discard"):
         p = sub.add_parser(name)
         p.add_argument("ids", nargs="+")
+        p.add_argument("--reason", default="user", help="recorded in the posting's history")
     sub.add_parser("expire", help=f"expire postings unreviewed for {store.EXPIRE_DAYS} days")
     sub.add_parser("dedupe", help="merge one role posted in several cities")
 
@@ -219,7 +220,7 @@ def cmd_opportunities(conn, args, run):
         return store.get(conn, args.id)
     if args.cmd in ("keep", "discard"):
         to = "kept" if args.cmd == "keep" else "discarded"
-        results = [store.set_status(conn, i, to) for i in args.ids]
+        results = [store.set_status(conn, i, to, reason=args.reason) for i in args.ids]
         for r in results:
             run.event("status_change", **r)
         return {"results": results}

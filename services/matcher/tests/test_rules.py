@@ -22,12 +22,13 @@ NOW = datetime(2026, 10, 11, 22, 0, tzinfo=timezone.utc)
 def facts(**over):
     base = {"work_mode": "hybrid", "employment_type": "full_time", "contract_months": None,
             "seniority": "senior", "pay_ranges": [], "industry": "fintech_payments",
-            "industry_reason": "Payments processor.", "role_domain": "fintech_payments", "fit_score": 80, "fit_reasons": ["a"], "concerns": []}
+            "industry_reason": "Payments processor.", "role_domain": "fintech_payments",
+            "role_type": "product_management", "role_type_reason": "Owns the roadmap.", "fit_score": 80, "fit_reasons": ["a"], "concerns": []}
     return {**base, **over}
 
 
 def posting(**over):
-    return {"id": "1", "title": "Senior Product Manager, Payments", "company": "Stripe",
+    return {"id": "1", "title": "Senior Product Manager, Payments", "company": "Stripe", "description": "Own payouts.",
             "location": "Toronto, Ontario, Canada", "posted_at": "2026-10-11T18:00+00:00", "criteria": {}, **over}
 
 
@@ -128,6 +129,18 @@ class DecideTests(unittest.TestCase):
         self.assertEqual(derived["industry"], "big_tech")
         # Prefix match only on a word boundary: "Metaview" is not Meta.
         self.assertTrue(self.decide(posting(company="Metaview"), facts(industry="other", role_domain="other"))[0])
+
+    def test_program_delivery_titled_product_is_rejected(self):
+        p = posting(title="HCM Strategy, Data Program Product Management, Vice President", company="Goldman Sachs")
+        reasons = self.decide(p, facts(role_type="program_or_delivery",
+                                       role_type_reason="Runs an HR system rollout."))[0]
+        self.assertIn("not a product management role: program or delivery", reasons[0])
+
+    def test_unclear_role_type_and_missing_description_only_flag(self):
+        reasons, flags, _ = self.decide(posting(description=""), facts(role_type="unclear"))
+        self.assertEqual(reasons, [])
+        self.assertIn("couldn't confirm it's a product management role", flags)
+        self.assertTrue(any("no description" in f for f in flags))
 
     def test_untitled_seniority_uses_model_level(self):
         p = posting(title="Product Manager, Payments")
