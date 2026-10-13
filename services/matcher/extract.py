@@ -55,13 +55,16 @@ Facts (use "unknown" or null when the posting doesn't say; never guess):
   If the currency symbol is "$" with no code, use USD for US locations and CAD for Canadian ones.
 - industry: the HIRING COMPANY's industry, one of:
   fintech_payments, big_tech, health_tech, ecommerce_platform, cpg, retailer, other.
+  fintech_payments includes banks, payments, lending, credit bureaus and credit-data companies
+  (e.g. Equifax, Experian, TransUnion), and identity verification / KYC companies.
   ecommerce_platform means companies that build commerce software or marketplaces (e.g. Shopify,
   Amazon marketplace, Etsy). A company that mainly sells goods to consumers in stores or online
   (e.g. Walmart, Loblaw, 7-Eleven, a pharmacy chain) is a retailer, even when the role is digital.
   cpg means consumer packaged goods makers (e.g. P&G, PepsiCo, Unilever).
   industry_reason: one short sentence.
 - role_domain: what the product THIS ROLE owns is about, whatever the company does:
-  fintech_payments (payments, cards, banking, lending, money movement, fraud), health_tech,
+  fintech_payments (payments, cards, banking, lending, money movement, fraud, credit and
+  credit data, customer identity / KYC / account onboarding), health_tech,
   ecommerce_platform (checkout, merchants, marketplaces), or other.
   E.g. a PM owning card processing at a B2B SaaS company is fintech_payments.
 
