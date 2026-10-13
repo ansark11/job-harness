@@ -17,6 +17,7 @@ as matches flagged "not scored"), 2 if the model failed for every posting.
 import argparse
 import json
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,8 +59,9 @@ def is_fresh(posting, now):
     return (now - datetime.fromisoformat(posting["posted_at"])).total_seconds() < FRESH_HOURS * 3600
 
 
-def match_postings(postings, cfg, resume, now, post=None, cache=None, run=None):
-    """(matches, rejected, stats). `cache` is a dict updated in place."""
+def match_postings(postings, cfg, resume, now, post=None, cache=None, run=None, on_cached=None):
+    """(matches, rejected, stats). `cache` is a dict updated in place; `on_cached` is called
+    after each new extraction so a crash later never loses calls already paid for."""
     log = run or _NullRun()
     cache = {} if cache is None else cache
     resume_digest = runlog.digest(resume)
@@ -85,8 +87,13 @@ def match_postings(postings, cfg, resume, now, post=None, cache=None, run=None):
             facts, call = extract.extract(p, resume, post)
         except llm.ModelError as e:
             return p, None, str(e), False
-        cache[key] = {"facts": facts, "at": now.isoformat(timespec="seconds"), "id": p.get("id")}
+        with lock:
+            cache[key] = {"facts": facts, "at": now.isoformat(timespec="seconds"), "id": p.get("id")}
+            if on_cached:
+                on_cached(cache)
         return p, facts, call, False
+
+    lock = threading.Lock()
 
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         results = list(pool.map(facts_for, todo))
@@ -154,9 +161,8 @@ def main(argv=None, post=None):
         now = datetime.now(timezone.utc)
         cache = {} if args.no_cache else load_cache(CACHE_PATH)
 
-        matches, rejected, stats = match_postings(postings, cfg, resume, now, post, cache, run)
-        if not args.no_cache:
-            save_cache(CACHE_PATH, cache)
+        saver = None if args.no_cache else (lambda c: save_cache(CACHE_PATH, c))
+        matches, rejected, stats = match_postings(postings, cfg, resume, now, post, cache, run, saver)
 
         result = {"generated_at": now.isoformat(timespec="seconds"), "resume_digest": runlog.digest(resume),
                   "criteria_digest": runlog.digest(cfg), "matches": matches, "rejected": rejected}

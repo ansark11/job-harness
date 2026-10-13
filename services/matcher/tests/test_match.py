@@ -106,6 +106,62 @@ class MatchPostingsTests(unittest.TestCase):
         self.assertEqual(stats["model_errors"], 0)
 
 
+class TransientFailureTests(unittest.TestCase):
+    def setUp(self):
+        self.sleeps = []
+        self.patch = mock.patch.object(llm, "sleep", self.sleeps.append)
+        self.patch.start()
+
+    def tearDown(self):
+        self.patch.stop()
+
+    def test_read_timeout_is_retried_then_succeeds(self):
+        calls = []
+
+        def post(payload):
+            calls.append(1)
+            if len(calls) < 3:
+                raise llm.TransientError("OpenAI API connection failed: TimeoutError")
+            return reply(facts())
+        matches, _, stats = match.match_postings([posting(id="1", title="T")], CFG, "R", NOW, post)
+        self.assertEqual((len(calls), stats["model_errors"]), (3, 0))
+        self.assertEqual(self.sleeps, list(llm.RETRY_WAITS))
+
+    def test_retries_exhausted_flags_posting_instead_of_crashing(self):
+        def post(payload):
+            raise llm.TransientError("OpenAI API connection failed: TimeoutError")
+        matches, _, stats = match.match_postings([posting(id="1", title="T")], CFG, "R", NOW, post)
+        self.assertEqual(stats["model_errors"], 1)
+        self.assertIn("not scored", matches[0]["match"]["flags"][0])
+
+    def test_permanent_errors_are_not_retried(self):
+        calls = []
+
+        def post(payload):
+            calls.append(1)
+            raise llm.ModelError("OpenAI API HTTP 401: bad key")
+        match.match_postings([posting(id="1", title="T")], CFG, "R", NOW, post)
+        self.assertEqual(len(calls), 1)
+
+    def test_socket_timeout_maps_to_transient(self):
+        with mock.patch.object(llm.urllib.request, "urlopen", side_effect=TimeoutError("The read operation timed out")), \
+                mock.patch.object(llm, "api_key", return_value="k"):
+            with self.assertRaises(llm.TransientError):
+                llm._urllib_post({})
+
+    def test_cache_saved_after_each_extraction_survives_a_crash(self):
+        saved = []
+
+        def post(payload):
+            if "Title: Second" in payload["input"]:
+                raise RuntimeError("something unexpected")
+            return reply(facts())
+        with mock.patch.object(match, "WORKERS", 1), self.assertRaises(RuntimeError):
+            match.match_postings([posting(id="1", title="First"), posting(id="2", title="Second")], CFG, "R",
+                                 NOW, post, {}, None, lambda c: saved.append(dict(c)))
+        self.assertEqual([v["id"] for v in saved[-1].values()], ["1"])
+
+
 class CliTests(unittest.TestCase):
     def test_cli_end_to_end_with_cache_file(self):
         model = CannedModel({"Senior PM, Payments": facts()})

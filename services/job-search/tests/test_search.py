@@ -115,6 +115,19 @@ class RunSearchTests(unittest.TestCase):
         self.assertEqual(len(out["postings"]), 1)
         self.assertIn(search.BACKOFF[0], sleeps)
 
+    def test_network_blip_is_retried(self):
+        sleeps, attempts = [], []
+        web = FakeWeb({("Senior Product Manager", 0): card_html(1, "Senior Product Manager")}, {"1": posting_html()})
+
+        def get(url):
+            attempts.append(url)
+            if len(attempts) == 1:
+                raise search.FetchError("unreachable: [Errno 8] nodename nor servname provided")
+            return web.get(url)
+        out = search.run_search(CFG, search.Fetcher(get=get, sleep=sleeps.append), NOW)
+        self.assertEqual(len(out["postings"]), 1)
+        self.assertIn(search.BACKOFF[0], sleeps)
+
     def test_every_query_blocked_is_failure(self):
         web = FakeWeb({}, {}, statuses=[999] * 10)
         out = search.run_search(CFG, fetcher(web), NOW)

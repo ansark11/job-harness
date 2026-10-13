@@ -9,6 +9,7 @@ tests run on canned replies and never reach the network.
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -16,10 +17,16 @@ from pathlib import Path
 MODEL = "gpt-6-luna"
 API_URL = "https://api.openai.com/v1/responses"
 ENV_PATH = Path(__file__).resolve().parent / ".env"
+RETRY_WAITS = (5, 20)                 # seconds before each retry of a transient failure
+RETRY_HTTP = {408, 429, 500, 502, 503, 504}
 
 
 class ModelError(Exception):
     pass
+
+
+class TransientError(ModelError):
+    """A failure worth retrying: timeout, dropped connection, rate limit, server error."""
 
 
 def api_key():
@@ -43,18 +50,32 @@ def _urllib_post(payload):
     except urllib.error.HTTPError as e:
         try:
             detail = json.loads(e.read() or b"{}").get("error", {}).get("message", "")
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, OSError):
             detail = ""
-        raise ModelError(f"OpenAI API HTTP {e.code}: {detail}") from e
+        err = TransientError if e.code in RETRY_HTTP else ModelError
+        raise err(f"OpenAI API HTTP {e.code}: {detail}") from e
     except urllib.error.URLError as e:
-        raise ModelError(f"OpenAI API unreachable: {e}") from e
+        raise TransientError(f"OpenAI API unreachable: {e.reason}") from e
+    except (TimeoutError, ConnectionError, OSError) as e:      # read timeouts, resets mid-response
+        raise TransientError(f"OpenAI API connection failed: {type(e).__name__}: {e}") from e
+
+
+sleep = time.sleep      # tests replace this
 
 
 def call_json(prompt, schema_name, schema, post=None):
     """One model call constrained to `schema`. Returns (parsed dict, call details for the run log)."""
     body = {"model": MODEL, "input": prompt,
             "text": {"format": {"type": "json_schema", "name": schema_name, "schema": schema, "strict": True}}}
-    resp = (post or _urllib_post)(body)
+    send = post or _urllib_post
+    for attempt in range(len(RETRY_WAITS) + 1):
+        try:
+            resp = send(body)
+            break
+        except TransientError:
+            if attempt == len(RETRY_WAITS):
+                raise
+            sleep(RETRY_WAITS[attempt])
     texts = [c.get("text", "") for o in resp.get("output", []) if o.get("type") == "message"
              for c in o.get("content", [])]
     call = {"model": resp.get("model", MODEL), "status": resp.get("status"), "usage": resp.get("usage")}

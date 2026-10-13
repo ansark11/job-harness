@@ -68,7 +68,14 @@ class Fetcher:
                 self.sleep(random.uniform(*self.delay))
             self._last = time.monotonic()
             self.requests += 1
-            status, body = self.get(url)
+            try:
+                status, body = self.get(url)
+            except FetchError:
+                # Network blip (DNS, dropped Wi-Fi, laptop waking): wait and retry.
+                if attempt < len(BACKOFF):
+                    self.sleep(BACKOFF[attempt])
+                    continue
+                raise
             if status == 200:
                 return body
             if status in RETRY_STATUSES and attempt < len(BACKOFF):
