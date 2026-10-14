@@ -19,7 +19,8 @@ from pathlib import Path
 
 import forms
 
-DIALOG = "[role=dialog]"
+# LinkedIn's Easy Apply is a native <dialog open> with no role attribute; older UIs used role=dialog.
+DIALOG = "dialog[open], [role=dialog]"
 MAX_PAGES = 12
 NEXT = re.compile(r"^(next|continue|continue to next step)$", re.I)
 REVIEW = re.compile(r"^review( your application)?$", re.I)
@@ -181,7 +182,7 @@ class Walk:
         return 1
 
     def page_errors(self):
-        loc = self.page.locator(f"{DIALOG} [role=alert], {DIALOG} .artdeco-inline-feedback--error")
+        loc = self.page.locator(DIALOG).first.locator("[role=alert], .artdeco-inline-feedback--error")
         # innerText of a hidden element is still its text, so filter on visibility.
         return list(dict.fromkeys(e.inner_text().strip() for e in loc.all() if e.is_visible() and e.inner_text().strip()))
 

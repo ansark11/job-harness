@@ -24,8 +24,9 @@ YEARS = "how many years of work experience do you have with payments"
 GENDER = "gender"
 WHY = "why are you interested in this role"
 COVER = "upload cover letter"
+HYBRID = "are you able to work in a hybrid capacity in our office"
 FULL = {PHONE: "416-555-0100", SPONSOR: "No", YEARS: "8", GENDER: "I don't wish to answer",
-        WHY: "I led payouts at a fintech."}
+        WHY: "I led payouts at a fintech.", HYBRID: "Yes"}
 
 
 class EasyApplyTests(unittest.TestCase):
@@ -84,7 +85,9 @@ class EasyApplyTests(unittest.TestCase):
     def test_page_three_unknowns_with_types_and_options(self):
         r = self.walk(self.packet({PHONE: FULL[PHONE]}, skip=[COVER]))
         unknown = {f["key"]: f for f in r["fields"] if f.get("outcome") == "unknown"}
-        self.assertEqual(set(unknown), {SPONSOR, YEARS, GENDER, WHY})
+        self.assertEqual(set(unknown), {SPONSOR, YEARS, GENDER, WHY, HYBRID})
+        self.assertEqual((unknown[HYBRID]["type"], unknown[HYBRID]["options"], unknown[HYBRID]["required"]),
+                         ("radio", ["Yes", "No"], True))
         self.assertEqual(unknown[SPONSOR]["type"], "radio")
         self.assertEqual(unknown[SPONSOR]["options"], ["Yes", "No"])
         self.assertTrue(unknown[SPONSOR]["required"])
@@ -115,6 +118,7 @@ class EasyApplyTests(unittest.TestCase):
         self.assertEqual(r["status"], "submitted")
         sent = self.page.evaluate("window.submitted")
         self.assertEqual(sent, {"phone": "416-555-0100", "resume": "b", "upload": None, "sponsor": "No",
+                                "hybrid": "hyb-y",
                                 "years": "8", "gender": "I don't wish to answer", "why": "I led payouts at a fintech."})
         self.assertNotIn("discarded", self.page.evaluate("window.events"))
 
@@ -122,6 +126,13 @@ class EasyApplyTests(unittest.TestCase):
         r = self.walk(self.packet(FULL, skip=[COVER]), mode="submit", cap_ok=lambda: False)
         self.assertEqual(r["status"], "cap_reached")
         self.assertNotIn("submitted", self.page.evaluate("window.events"))
+
+    def test_native_dialog_without_role(self):
+        r = self.walk(self.packet(FULL, skip=[COVER], url=PAGE + "?native"), mode="submit")
+        self.assertEqual(r["status"], "submitted")
+        r = self.walk(self.packet({}, url=PAGE + "?native"))
+        self.assertEqual((r["status"], r["unknown"]), ("needs_input", [PHONE]))
+        self.assertIn("discarded", self.page.evaluate("window.events"))
 
     def test_not_easy_apply_and_already_applied(self):
         self.assertEqual(self.walk(self.packet(url=PAGE + "?noeasy"))["status"], "not_easy_apply")

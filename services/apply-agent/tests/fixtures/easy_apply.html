@@ -53,6 +53,17 @@
       <label><input class="sr" type="radio" name="sponsor" value="Yes" required> Yes</label>
       <label><input class="sr" type="radio" name="sponsor" value="No" required> No</label>
     </fieldset>
+    <!-- LinkedIn's structure: the question is text before an unlabeled radiogroup; the
+         question repeats as each option's aria-label; required only shows as the '*'. -->
+    <div class="q">
+      <span>Are you able to work in a hybrid capacity in our office?<br>*</span>
+      <fieldset role="radiogroup">
+        <div role="radio" aria-label="Are you able to work in a hybrid capacity in our office?">
+          <div><div><input class="sr" type="radio" name="radio-group-_r_t_" id="hyb-y"></div><div>Yes</div></div></div>
+        <div role="radio" aria-label="Are you able to work in a hybrid capacity in our office?">
+          <div><div><input class="sr" type="radio" name="radio-group-_r_t_" id="hyb-n"></div><div>No</div></div></div>
+      </fieldset>
+    </div>
     <label for="years">How many years of work experience do you have with Payments?*</label>
     <input id="years" type="number" required>
     <label for="gender">Gender</label>
@@ -86,6 +97,14 @@
 
 <script>
   const q = new URLSearchParams(location.search);
+  if (q.has('native')) {
+    const old = document.getElementById('modal'), dlg = document.createElement('dialog');
+    while (old.firstChild) dlg.appendChild(old.firstChild);
+    dlg.id = 'modal';
+    old.replaceWith(dlg);
+  }
+  const setOpen = (on) => { const m = document.getElementById('modal');
+    if (m.tagName === 'DIALOG') { if (on) m.show(); else m.close(); } else m.hidden = !on; };
   if (q.has('noeasy')) document.getElementById('easy').hidden = true;
   if (q.has('applied')) document.getElementById('applied').hidden = false;
   let step = 1;
@@ -112,7 +131,7 @@
     if (!ok) { window.events.push('blocked'); }
     return ok;
   }
-  $('easy').onclick = () => { $('modal').hidden = false; step = 1; show(); window.events.push('opened'); };
+  $('easy').onclick = () => { setOpen(true); step = 1; show(); window.events.push('opened'); };
   $('next').onclick = () => { if (valid()) { step++; show(); } };
   $('review').onclick = () => { if (valid()) { step = 4; show(); } };
   $('submit').onclick = () => {
@@ -121,13 +140,14 @@
       phone: $('phone').value, resume: (document.querySelector('input[name=resume]:checked') || {}).value,
       upload: $('resume-upload').files.length ? $('resume-upload').files[0].name : null,
       sponsor: (document.querySelector('input[name=sponsor]:checked') || {}).value,
+      hybrid: (document.querySelector('input[name="radio-group-_r_t_"]:checked') || {}).id || null,
       years: $('years').value, gender: $('gender').value, why: $('why').value };
     sections().forEach(s => s.hidden = true);
     document.querySelector('footer').hidden = true;
     $('sent').hidden = false;
   };
   $('dismiss').onclick = () => { $('confirm').hidden = false; };
-  $('discard').onclick = () => { $('confirm').hidden = true; $('modal').hidden = true; window.events.push('discarded'); };
+  $('discard').onclick = () => { $('confirm').hidden = true; setOpen(false); window.events.push('discarded'); };
 </script>
 </body>
 </html>

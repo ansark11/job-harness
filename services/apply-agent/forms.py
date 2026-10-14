@@ -41,6 +41,30 @@ EXTRACT_JS = r"""
     }
     return clean(el.getAttribute('aria-label') || el.placeholder || el.name || '');
   };
+  // Text shown just before an element: LinkedIn puts a radio question's text in a sibling
+  // above the radiogroup rather than in a <legend>.
+  const textBefore = el => {
+    for (let n = el, i = 0; n && n !== scope && i < 3; n = n.parentElement, i++) {
+      const prev = n.previousElementSibling;
+      if (prev && prev.getClientRects().length && !prev.querySelector('input, select, textarea')) {
+        const t = text(prev);
+        if (t && t.length < 400) return t;
+      }
+    }
+    return '';
+  };
+  // An option's own text. LinkedIn renders it in a sibling of the input's wrapper, with no <label>,
+  // and the option wrapper's aria-label is the question, not the option.
+  const optionLabel = el => {
+    const l = labelEl(el);
+    if (l && text(l)) return text(l);
+    for (let n = el.parentElement, i = 0; n && n !== scope && i < 3; n = n.parentElement, i++) {
+      if (n.querySelectorAll('input').length > 1) break;      // reached the group: stop
+      const t = text(n);
+      if (t && t.length < 120) return t;
+    }
+    return clean(el.getAttribute('aria-label') || el.value || el.name || '');
+  };
   const groupLabel = el => {
     const fs = el.closest('fieldset');
     if (fs) {
@@ -54,6 +78,11 @@ EXTRACT_JS = r"""
       if (by && document.getElementById(by)) return text(document.getElementById(by));
       if (grp.getAttribute('aria-label')) return clean(grp.getAttribute('aria-label'));
     }
+    const container = fs || grp;
+    const before = container ? textBefore(container) : '';
+    if (before) return before;
+    const opt = el.closest('[role=radio], [role=checkbox]');     // LinkedIn: the question as each option's aria-label
+    if (opt && opt.getAttribute('aria-label')) return clean(opt.getAttribute('aria-label'));
     return el.name || '';
   };
   const out = [], groups = new Set();
@@ -76,10 +105,10 @@ EXTRACT_JS = r"""
       const id = next();
       members.forEach((m, i) => m.setAttribute('data-jh-id', `${id}-${i}`));
       const legend = groupLabel(el);
-      const checked = members.filter(m => m.checked).map(labelFor);
+      const checked = members.filter(m => m.checked).map(optionLabel);
       const fs = el.closest('fieldset');
       out.push({id, type: type === 'radio' ? 'radio' : 'checkbox_group', label: legend,
-                options: members.map(labelFor),
+                options: members.map(optionLabel),
                 required: members.some(m => m.required) || (fs && fs.getAttribute('aria-required') === 'true')
                           || /\*\s*$|\(required\)/i.test(legend),
                 value: type === 'radio' ? (checked[0] || null) : (checked.length ? checked : null)});
