@@ -6,6 +6,7 @@
     python3 workflows/apply/run.py submit <application id> [--headless]     # approve a filled portal application
     python3 workflows/apply/run.py regenerate <application id> <item> [--steer "..."]
     python3 workflows/apply/run.py status <application id>
+    python3 workflows/apply/run.py summary [--hours 24]     # applied, answers chosen for you, skipped
 
 Each round the apply-agent walks the form with every answer known so far and
 stops at the first field it can't fill. Each unknown field is resolved:
@@ -28,6 +29,7 @@ with the command to run; afterwards, `continue`.
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -41,9 +43,19 @@ DATA = HERE / "data"
 MAX_ROUNDS = 8
 LONG_FORM_MIN_MAXLENGTH = 300
 DEFAULT_MAX_CHARS = 1500
-SCRIPTS = {"tracker": "tracker.py", "apply-agent": "apply.py", "drafter": "draft.py", "mapper": "map_question.py"}
+SCRIPTS = {"tracker": "tracker.py", "apply-agent": "apply.py", "drafter": "draft.py", "mapper": "map_question.py",
+           "answerer": "answer_question.py"}
 SERVICE_DIRS = {"tracker": "tracker", "apply-agent": "apply-agent", "drafter": "answer-drafter",
-                "mapper": "answer-drafter"}
+                "mapper": "answer-drafter", "answerer": "answer-drafter"}
+CRITERIA = HERE.parents[1] / "criteria.json"
+
+# Hands-off Easy Apply (the user's choice): resolve everything without asking, but never guess.
+AUTO_MAP_MIN = 0.85       # accept a suggested bank key for a new wording at this confidence
+AUTO_ANSWER_MIN = 0.80    # submit a model-chosen screening answer at this confidence; below it, skip the job
+DECLINE = "I don't wish to answer"     # the agent matches it to the form's own decline option
+SELF_ID = re.compile(r"gender|\brace\b|ethnic|veteran|disabilit|hispanic|latin[oa]|visible minorit|indigenous|"
+                     r"aboriginal|lgbt|sexual orientation|pronoun|transgender", re.I)
+AUTO_SOURCES = ("model", "draft_auto", "decline")
 
 
 class StepError(Exception):
@@ -98,6 +110,7 @@ class Applier:
     def __init__(self, call, app_id, run, dry_run=False, headless=False, approved=False):
         self.approved = approved        # the user approved submitting a filled portal application
         self.channel = None             # easy_apply or portal, once the agent has said
+        self.skip_reasons = []          # hands-off: why this job can't be submitted without guessing
         self.call = call
         self.app_id = app_id
         self.run = run
@@ -127,6 +140,10 @@ class Applier:
                 args += ["--apply-url", report["apply_url"]]
         self.tracker(*args)
 
+    def hands_off(self, app):
+        """Easy Apply resolves everything itself (the user's choice); portals keep the approval step."""
+        return self.channel == "easy_apply" if self.channel else app["job"]["apply_type"] == "easy"
+
     def mode(self, apply_type):
         """Easy Apply submits on its own; a company portal only once you've approved it."""
         if self.approved:
@@ -138,12 +155,15 @@ class Applier:
 
     def resolve(self, fields, app):
         out = []
+        hands = self.hands_off(app)
         for f in fields:
             if f.get("outcome") != "unknown":
                 continue
             base = {"key": f["key"], "label": f["label"], "field_type": f["type"], "options": f.get("options"),
                     "required": f.get("required", False), "page": f.get("page"), "kind": kind_of(f)}
             if base["kind"] == "file":
+                if hands and base["required"]:
+                    self.skip_reasons.append(f"asks for an upload the agent doesn't handle ({base['label']})")
                 out.append({**base, "state": "needs_answer" if base["required"] else "skipped",
                             "meta": {"note": "an upload the agent doesn't handle"}})
             elif base["kind"] == "long_form":
@@ -151,12 +171,17 @@ class Applier:
                     out.append({**base, "state": "skipped"})
                 else:
                     try:
-                        out.append(self.draft_item(base, f, app))
+                        item = self.draft_item(base, f, app)
+                        if hands:       # used as drafted; listed in the summary for you to read afterwards
+                            item.update(state="approved", source="draft_auto")
+                        out.append(item)
                     except StepError as e:     # you can still write it yourself
                         self.run.warn("draft_failed", application_id=self.app_id, key=f["key"], error=str(e))
+                        if hands:
+                            self.skip_reasons.append(f"couldn't draft an answer to {base['label']!r}")
                         out.append({**base, "state": "needs_answer", "meta": {"note": f"couldn't draft: {e}"}})
             else:
-                out.append(self.profile_item(base, f, app))
+                out.append(self.profile_item(base, f, app, hands))
             self.run.event("field_resolved", application_id=self.app_id, key=f["key"], kind=base["kind"],
                            state=out[-1]["state"], source=out[-1].get("source"))
         return out
@@ -176,13 +201,21 @@ class Applier:
         return {**base, "state": "needs_review", "value": d["answer"], "source": "draft",
                 "meta": {k: d[k] for k in ("resume_points", "char_count", "max_chars", "within_limit")}}
 
-    def profile_item(self, base, field, app):
+    def profile_item(self, base, field, app, hands=False):
+        self_id = bool(SELF_ID.search(base["label"]))
         if field.get("error"):        # the bank's answer fit none of this form's options
+            if hands:
+                if self_id:
+                    self.skip_reasons.append(f"self-identification question with no decline option ({base['label']})")
+                    return {**base, "state": "needs_answer", "meta": {"note": field["error"]}}
+                return self.model_item(base, field, app, hint=field["error"])
             return {**base, "state": "needs_answer", "meta": {"note": field["error"], "fill_error": True}}
         r = self.tracker("bank", "resolve", base["label"])
         if r["status"] == "answered":
             return {**base, "state": "filled", "value": r["answer"], "source": "bank", "bank_key": r["key"]}
         if r["status"] in ("always_ask", "unanswered"):
+            if hands:
+                return self.decline_item(base) if self_id or r.get("sensitive") else self.model_item(base, field, app)
             return {**base, "state": "needs_answer", "bank_key": r["key"],
                     "meta": {"note": "always asked" if r["status"] == "always_ask" else "bank key has no answer yet"}}
         args = ["inbox", "add", "--question", base["label"], "--field-type", field["type"],
@@ -193,10 +226,69 @@ class Applier:
         if jur:
             args += ["--jurisdiction", jur]
         item = self.tracker(*args)
+        proposal = {"key": item.get("proposed_key"), "confidence": item.get("proposed_confidence") or 0}
         if not item.get("duplicate") and item.get("proposed_key") is None:
-            self.propose(item["id"], base["label"], field.get("options"))
+            proposal = self.propose(item["id"], base["label"], field.get("options")) or proposal
+        if hands:
+            auto = self.auto_map(item["id"], base, proposal)
+            if auto:
+                return auto
+            if self_id:
+                return {**self.decline_item(base), "inbox_id": item["id"]}
+            if not base["required"]:
+                return {**base, "state": "skipped", "inbox_id": item["id"]}
+            return {**self.model_item(base, field, app), "inbox_id": item["id"]}
         state = "needs_answer" if base["required"] else "skipped"
         return {**base, "state": state, "inbox_id": item["id"]}
+
+    def auto_map(self, inbox_id, base, proposal):
+        """Hands-off: a confident match to an answered bank key is accepted and remembered."""
+        key, conf = proposal.get("key"), proposal.get("confidence") or 0
+        if not key or conf < AUTO_MAP_MIN:
+            return None
+        entry = self.tracker("bank", "show", key)
+        if entry.get("answer") is None or entry.get("always_ask"):
+            return None
+        self.tracker("inbox", "resolve", str(inbox_id), "--key", key)
+        self.run.event("auto_mapped", application_id=self.app_id, question=base["label"], key=key, confidence=conf)
+        return {**base, "state": "filled", "value": entry["answer"], "source": "bank", "bank_key": key,
+                "inbox_id": inbox_id, "meta": {"auto_mapped": key, "confidence": conf}}
+
+    @staticmethod
+    def decline_item(base):
+        return {**base, "state": "approved", "value": DECLINE, "source": "decline"}
+
+    def profile(self):
+        """What the model may use to answer for you: non-sensitive saved answers and job preferences."""
+        entries = self.tracker("bank", "list")["entries"]
+        answers = [{"question": e["question"], "answer": e["answer"]} for e in entries
+                   if e["answer"] and not e["sensitive"]]
+        prefs = {}
+        try:
+            search = json.loads(CRITERIA.read_text()).get("search", {})
+            prefs = {k: search[k] for k in ("locations", "work_types", "job_types") if k in search}
+        except (OSError, json.JSONDecodeError):
+            pass
+        return {"answers": answers, "preferences": prefs}
+
+    def model_item(self, base, field, app, hint=None):
+        """Hands-off: the model answers from your profile; not confident enough means skip the job."""
+        question = base["label"] + (f" (your saved answer didn't fit the options: {hint})" if hint else "")
+        args = ["--question", question, "--job", self._write("job.json", app["job"]),
+                "--resume", app["resume"]["text_path"], "--profile", self._write("profile.json", self.profile()),
+                "--field-type", field["type"]]
+        if field.get("options"):
+            args += ["--options", json.dumps(field["options"])]
+        try:
+            a = self.call("answerer", args)
+        except StepError as e:
+            self.skip_reasons.append(f"couldn't get an answer to {base['label']!r}: {e}")
+            return {**base, "state": "needs_answer", "meta": {"note": str(e)}}
+        meta = {"confidence": a["confidence"], "basis": a["basis"]}
+        if a["answer"] is not None and a["confidence"] >= AUTO_ANSWER_MIN:
+            return {**base, "state": "approved", "value": a["answer"], "source": "model", "meta": meta}
+        self.skip_reasons.append(f"not confident answering {base['label']!r} ({a['confidence']:.0%}: {a['basis']})")
+        return {**base, "state": "needs_answer", "meta": {**meta, "note": "not confident enough to answer for you"}}
 
     def propose(self, inbox_id, question, options):
         keys = self._write("keys.json", self.tracker("bank", "keys"))
@@ -207,9 +299,10 @@ class Applier:
             p = self.call("mapper", args)
         except StepError as e:          # a proposal is a convenience; the user can still answer
             self.run.warn("propose_failed", inbox_id=inbox_id, error=str(e))
-            return
+            return None
         self.tracker("inbox", "propose", str(inbox_id), "--key", p["key"] or "none",
                      "--confidence", str(p["confidence"]), "--reason", p["reason"] or "")
+        return p
 
     def reresolve(self, app):
         """Items waiting on the bank (you answered the inbox or set the key): fill them now."""
@@ -232,6 +325,8 @@ class Applier:
             self.reresolve(self.app())
             pk = self.tracker("application", "packet", self.app_id)
             if pk["blocking"]:
+                if self.hands_off(self.app()):
+                    return self.skip(f"waiting on {len(pk['blocking'])} answer(s) from an earlier run")
                 self.status("needs_input", f"{len(pk['blocking'])} item(s) need you")
                 return self.summary()
             self.status("in_progress")
@@ -252,7 +347,11 @@ class Applier:
                 self.status("in_progress", report=saved)
             if s == "submitted":
                 self.status("submitted", report=saved)
-                return self.summary()
+                out = self.summary()
+                if self.hands_off(self.app()):
+                    auto = len(out.get("chosen_for_you", []))
+                    notify("Applied", f"{out['job']}" + (f" ({auto} answer(s) chosen for you)" if auto else ""))
+                return out
             if s == "ready":
                 if self.dry_run:
                     self.status("ready", "every field answered; stopped before Submit (dry run)", saved)
@@ -277,13 +376,26 @@ class Applier:
                 self.status("failed", hint.get(s) or report.get("error") or s, saved)
                 return self.summary()
             unknown = [f for f in report["fields"] if f.get("outcome") == "unknown"]
+            app = self.app()
             if not unknown:
-                self.status("needs_input", "the form rejected a value: " + "; ".join(report.get("errors") or []), saved)
+                note = "the form rejected a value: " + "; ".join(report.get("errors") or [])
+                if self.hands_off(app):
+                    return self.skip(note, saved)
+                self.status("needs_input", note, saved)
                 return self.summary()
-            items = self.resolve(unknown, self.app())
+            items = self.resolve(unknown, app)
             self.tracker("application", "items", self.app_id, "--set", self._write("items.json", items))
+            if self.skip_reasons:
+                return self.skip("; ".join(self.skip_reasons), saved)
         self.status("failed", f"no progress after {MAX_ROUNDS} rounds")
         return self.summary()
+
+    def skip(self, why, report=None):
+        """Hands-off: pass on this job rather than guess, and tell the user."""
+        self.status("skipped", f"skipped: {why}", report)
+        out = self.summary()
+        notify("Skipped an application", f"{out['job']}: {why}"[:200])
+        return out
 
     def regenerate(self, ref, steer=None):
         app = self.app()
@@ -329,7 +441,10 @@ class Applier:
                 entry["do"] = [f"{t} application edit {self.app_id} {n} --value \"...\""]
             needs.append(entry)
         out = {"application_id": self.app_id, "job": f"{app['job']['title']} at {app['job']['company']}",
-               "status": app["status"], "note": app["note"], "needs": needs}
+               "status": app["status"], "note": app["note"], "needs": needs if app["status"] != "skipped" else []}
+        chosen = chosen_for_you(app["items"])
+        if chosen:
+            out["chosen_for_you"] = chosen
         if app.get("apply_url"):
             out["apply_url"] = app["apply_url"]
         if app["status"] == "ready" and app.get("last_report"):
@@ -343,6 +458,49 @@ class Applier:
         if needs:
             out["then"] = f"python3 workflows/apply/run.py continue {self.app_id}"
         return out
+
+
+def chosen_for_you(items):
+    """Answers the hands-off flow picked without you: model answers, auto-used drafts,
+    declines, and new wordings matched to your saved answers."""
+    out = []
+    for it in items:
+        meta = it.get("meta") or {}
+        if it["source"] in AUTO_SOURCES or meta.get("auto_mapped"):
+            how = {"model": "answered by the model", "draft_auto": "drafted from your resume",
+                   "decline": "declined to answer"}.get(it["source"], f"matched to your saved {meta.get('auto_mapped')}")
+            entry = {"question": it["label"], "answer": it["value"], "how": how}
+            if meta.get("confidence") is not None:
+                entry["confidence"] = meta["confidence"]
+            if meta.get("basis"):
+                entry["basis"] = meta["basis"]
+            out.append(entry)
+    return out
+
+
+def notify(title, message):
+    subprocess.run(["osascript", "-e", f"display notification {json.dumps(message)} with title {json.dumps(title)}"],
+                   capture_output=True)
+
+
+def daily_summary(call, hours=24):
+    """Applications touched in the last `hours`: what was submitted, what was chosen for you, what was skipped."""
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    lines = []
+    for a in call("tracker", ["application", "list"])["applications"]:
+        if datetime.fromisoformat(a["updated_at"]) < cutoff or a["status"] not in ("submitted", "skipped", "ready",
+                                                                                   "needs_input"):
+            continue
+        app = call("tracker", ["application", "show", a["id"]])
+        lines.append(f"\n{a['status'].upper():<11} {a['title']} at {a['company']}  ({a['id']})")
+        if a["note"]:
+            lines.append(f"            {a['note']}")
+        for c in chosen_for_you(app["items"]):
+            conf = f" [{c['confidence']:.0%}]" if "confidence" in c else ""
+            lines.append(f"            - {c['question'][:90]}\n              → {str(c['answer'])[:160]}  "
+                         f"({c['how']}{conf})")
+    return "\n".join(lines).lstrip("\n") or f"No applications in the last {hours} hours."
 
 
 def main(argv=None, call=None):
@@ -366,10 +524,16 @@ def main(argv=None, call=None):
     p.add_argument("--steer")
     p = sub.add_parser("status")
     p.add_argument("application")
+    p = sub.add_parser("summary", help="what was applied to, chosen for you, or skipped recently")
+    p.add_argument("--hours", type=int, default=24)
     args = ap.parse_args(argv)
 
     with runlog.start("apply", HERE, argv) as run:
         call = call or make_caller(run)
+        if args.cmd == "summary":
+            print(daily_summary(call, args.hours))
+            run.finish(0)
+            return 0
         try:
             if args.cmd == "start":
                 create = ["application", "create", args.opportunity] + (["--resume", args.resume] if args.resume else []) \

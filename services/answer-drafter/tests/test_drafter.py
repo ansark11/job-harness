@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import answer_question  # noqa: E402
 import draft  # noqa: E402
 import llm  # noqa: E402
 import map_question  # noqa: E402
@@ -81,6 +82,30 @@ class DraftTests(unittest.TestCase):
                                   post=Scripted({"answer": "Because.", "resume_points": ["a"]}))
             self.assertEqual(code, 0)
             self.assertEqual(json.loads(out.getvalue())["answer"], "Because.")
+
+
+PROFILE = {"answers": [{"question": "Are you willing to relocate?", "answer": "Yes"}],
+           "preferences": {"locations": ["Toronto", "United States"], "work_types": ["remote", "hybrid"]}}
+
+
+class AnswerTests(unittest.TestCase):
+    def test_choice_answer_must_be_an_option(self):
+        model = Scripted({"answer": "yes", "confidence": 0.92, "basis": "Willing to relocate."})
+        out, _ = answer_question.answer("Hybrid in SF Tue/Thu?", JOB, RESUME, PROFILE, ["Yes", "No"], "radio", model)
+        self.assertEqual(out, {"answer": "Yes", "confidence": 0.92, "basis": "Willing to relocate."})
+        self.assertIn("Are you willing to relocate?: Yes", model.prompts[0])
+        self.assertIn("exactly one of the options", model.prompts[0])
+        out, _ = answer_question.answer("Q?", JOB, RESUME, PROFILE, ["Yes", "No"], "radio",
+                                        Scripted({"answer": "Maybe", "confidence": 0.99, "basis": "x"}))
+        self.assertEqual((out["answer"], out["confidence"]), (None, 0.0))
+
+    def test_free_text_and_null(self):
+        out, _ = answer_question.answer("Years of payments experience?", JOB, RESUME, PROFILE, None, "number",
+                                        Scripted({"answer": "7", "confidence": 0.85, "basis": "2019-2026."}))
+        self.assertEqual(out["answer"], "7")
+        out, _ = answer_question.answer("Security clearance?", JOB, RESUME, PROFILE, None, "text",
+                                        Scripted({"answer": None, "confidence": 0.7, "basis": "Not stated."}))
+        self.assertEqual((out["answer"], out["confidence"]), (None, 0.0))
 
 
 class MapTests(unittest.TestCase):

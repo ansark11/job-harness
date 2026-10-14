@@ -51,6 +51,9 @@ class Services:
     def __init__(self):
         self.agent_runs = []
         self.mapper_inputs = []
+        self.answerer_inputs = []
+        self.model_answers = {}         # question substring -> {"answer", "confidence", "basis"}
+        self.form = FORM
         self.submitted = None
 
     def __call__(self, tool, args):
@@ -72,6 +75,13 @@ class Services:
             q = args[args.index("--question") + 1]
             key = "phone" if "phone" in q.lower() else None
             return {"key": key, "confidence": 0.9 if key else 0.0, "reason": "same fact" if key else "new"}
+        if tool == "answerer":
+            q = args[args.index("--question") + 1]
+            self.answerer_inputs.append(Path(args[args.index("--profile") + 1]).read_text())
+            for frag, a in self.model_answers.items():
+                if frag in q:
+                    return a
+            return {"answer": None, "confidence": 0.0, "basis": "No facts about this."}
         if tool == "apply-agent":
             return self.agent(json.loads(Path(args[0]).read_text()), args)
         raise AssertionError(tool)
@@ -80,7 +90,7 @@ class Services:
         self.agent_runs.append(packet)
         answers, skip = packet["answers"], set(packet["skip"])
         seen = []
-        for page_no, page in enumerate(FORM, 1):
+        for page_no, page in enumerate(self.form, 1):
             unknown = False
             for f in page:
                 outcome = "filled" if f["key"] in answers else "skipped" if f["key"] in skip else "unknown"
@@ -88,7 +98,7 @@ class Services:
                 seen.append({**f, "page": page_no, "outcome": outcome, "source": "packet" if outcome == "filled" else None})
             if unknown:
                 return {"status": "needs_input", "fields": seen, "unknown": [], "screenshots": []}
-        if "--dry-run" in args:
+        if "--dry-run" in args or args[args.index("--mode") + 1] != "submit":
             return {"status": "ready", "fields": seen, "screenshots": []}
         self.submitted = answers
         return {"status": "submitted", "fields": seen, "screenshots": []}
@@ -96,19 +106,23 @@ class Services:
 
 class FlowBase(unittest.TestCase):
     """A temp tracker with a resume, one kept posting and a few bank answers."""
+    APPLY_TYPE = "easy"
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         t = Path(self.tmp.name)
+        self.notes = []
         self.patches = [mock.patch.dict(os.environ, {"TRACKER_DB": str(t / "jobs.db")}),
-                        mock.patch.object(wf, "DATA", t / "wf")]
+                        mock.patch.object(wf, "DATA", t / "wf"),
+                        mock.patch.object(wf, "notify", lambda title, msg: self.notes.append((title, msg)))]
         for p in self.patches:
             p.start()
         self.svc = Services()
         resume = t / "Jane Doe - Resume.docx"
         make_docx(resume, ["Jane Doe, Senior PM. Led payouts at a fintech, growing volume 4x."] * 5)
         matches = t / "m.json"
-        matches.write_text(json.dumps([{"id": "1", "title": "Senior PM", "company": "Test Co", "apply_type": "easy",
+        matches.write_text(json.dumps([{"id": "1", "title": "Senior PM", "company": "Test Co",
+                                        "apply_type": self.APPLY_TYPE,
                                         "location": "New York, NY", "url": "https://x/1", "description": "Payouts.",
                                         "match": {"score": 90, "fresh": True}}]))
         for cmd in (["resume", "add", str(resume)], ["ingest", str(matches)], ["keep", "1"],
@@ -129,6 +143,9 @@ class FlowBase(unittest.TestCase):
 
 
 class ApplyFlowTests(FlowBase):
+    """The interactive flow (company portals): new questions and drafts wait for you."""
+    APPLY_TYPE = "external"
+
     def test_full_flow_from_inbox_to_submitted(self):
         # Round 1: the phone question's wording is new -> inbox, with the mapper's suggested key.
         code, out = self.wf("start", "1")
@@ -161,7 +178,9 @@ class ApplyFlowTests(FlowBase):
         self.svc("tracker", ["inbox", "answer", str(lic["id"]), "--answer", "Yes"])
 
         code, out = self.wf("continue", app_id)
-        self.assertEqual((code, out["status"], out["needs"]), (0, "submitted", []))
+        self.assertEqual((code, out["status"], out["needs"]), (0, "ready", []))   # portal: waits for approval
+        code, out = self.wf("submit", app_id)
+        self.assertEqual((code, out["status"]), (0, "submitted"))
         self.assertEqual(self.svc.submitted[LICENSE["key"]], "Yes")
         self.assertEqual(self.svc.submitted[WHY["key"]], f"Draft for {WHY['label']} (shorter)")
         library = self.svc("tracker", ["answers", "list"])["answers"]
@@ -278,6 +297,7 @@ class PortalFlowTests(FlowBase):
         self.assertIn("application status", out["note"])
 
     def test_unknown_type_that_turns_out_easy_submits_on_its_own(self):
+        self.svc("tracker", ["bank", "set", "sponsorship_us", "No"])
         modes = []
 
         def agent(packet, args):
@@ -291,6 +311,60 @@ class PortalFlowTests(FlowBase):
             c.execute("UPDATE opportunities SET apply_type = 'unknown'")
         code, out = self.wf("start", "1")
         self.assertEqual((out["status"], modes), ("submitted", ["fill", "submit"]))
+
+
+class HandsOffTests(FlowBase):
+    """Easy Apply resolves everything itself; it skips a job rather than guess."""
+
+    def test_applies_without_asking_and_reports_what_it_chose(self):
+        self.svc.model_answers = {"driver": {"answer": "Yes", "confidence": 0.9, "basis": "Resume lists a commute."}}
+        code, out = self.wf("start", "1")
+        self.assertEqual((code, out["status"], out["needs"]), (0, "submitted", []))
+        sent = self.svc.submitted
+        self.assertEqual(sent[PHONE["key"]], "416-555-0100")                 # new wording, auto-matched
+        self.assertEqual(sent[WHY["key"]], f"Draft for {WHY['label']}")       # drafted, used as-is
+        self.assertEqual(sent[LICENSE["key"]], "Yes")                          # answered by the model
+        self.assertNotIn(HOBBY["key"], sent)                                   # optional unknown: left blank
+        how = {c["question"]: c["how"] for c in out["chosen_for_you"]}
+        self.assertEqual(how[PHONE["label"]], "matched to your saved phone")
+        self.assertEqual(how[WHY["label"]], "drafted from your resume")
+        self.assertEqual(how[LICENSE["label"]], "answered by the model")
+        self.assertEqual(self.notes[-1][0], "Applied")
+        # The auto-match is remembered: the next form with this wording needs no model call.
+        self.assertEqual(self.svc("tracker", ["bank", "resolve", PHONE["label"]])["via"], "alias")
+        # Self-identification answers never reach the model.
+        self.assertNotIn("I don't wish to answer", self.svc.answerer_inputs[0])
+        self.assertIn("416-555-0100", self.svc.answerer_inputs[0])
+        # Drafts it used on its own don't become "your voice" examples.
+        self.assertEqual(self.svc("tracker", ["answers", "list"])["answers"], [])
+
+    def test_not_confident_skips_the_job_and_tells_you(self):
+        self.svc.model_answers = {"driver": {"answer": "Yes", "confidence": 0.5, "basis": "Inferring."}}
+        code, out = self.wf("start", "1")
+        self.assertEqual(out["status"], "skipped")
+        self.assertIn("not confident answering", out["note"])
+        self.assertIn(LICENSE["label"], out["note"])
+        self.assertIsNone(self.svc.submitted)
+        self.assertEqual(self.notes[-1][0], "Skipped an application")
+
+    def test_self_identification_is_declined_never_guessed(self):
+        trans = {"key": "do you identify as transgender", "label": "Do you identify as transgender?",
+                 "type": "radio", "required": True, "options": ["Yes", "No", "I don't wish to answer"]}
+        self.svc.form = [[PHONE, trans]]
+        code, out = self.wf("start", "1")
+        self.assertEqual(out["status"], "submitted")
+        self.assertEqual(self.svc.submitted[trans["key"]], "I don't wish to answer")
+        self.assertEqual(self.svc.answerer_inputs, [])                         # no model call for it
+
+    def test_summary_lists_submissions_and_choices(self):
+        self.svc.model_answers = {"driver": {"answer": "Yes", "confidence": 0.9, "basis": "Commute."}}
+        self.wf("start", "1")
+        out = io.StringIO()
+        with redirect_stdout(out):
+            wf.main(["summary"], call=self.svc)
+        text = out.getvalue()
+        self.assertIn("SUBMITTED   Senior PM at Test Co", text)
+        self.assertIn("answered by the model [90%]", text)
 
 
 if __name__ == "__main__":

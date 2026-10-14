@@ -34,6 +34,8 @@ BRIEF = {
     "inbox_add": ("id", "question", "duplicate"),
     "inbox_resolved": ("id", "key", "how"),
     "question_mapped": ("question", "key", "confidence"),
+    "question_answered": ("question", "answer", "confidence", "basis"),
+    "auto_mapped": ("question", "key", "confidence"),
     "apply_step": ("application_id", "step", "status", "note", "source", "error"),
     "field_resolved": ("key", "kind", "state", "source"),
     "application_status": ("id", "status", "note"),

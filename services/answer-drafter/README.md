@@ -19,6 +19,20 @@ python3 draft.py --question "Why are you a good fit?" --job job.json --resume re
 - `--examples`: past answers you approved to similar questions
   (`tracker.py answers similar`), for voice only.
 
+## answer_question.py — answer a screening question for you (hands-off Easy Apply)
+
+```bash
+python3 answer_question.py --question "Can you work onsite Tue/Thu in SF?" --job job.json --resume resume.txt \
+                           --profile profile.json [--field-type radio] [--options '["Yes","No"]']
+```
+
+Answers from the resume, your **non-sensitive** saved answers and your job
+preferences only (`profile.json`, built by the apply workflow), with a 0–1
+confidence and the fact it relied on. For a choice field the answer must be
+one of the options or it's dropped. Never claims credentials or experience
+the resume doesn't show. Never used for self-identification questions. The
+workflow submits only confident answers and skips the job otherwise.
+
 ## map_question.py — which bank key does a new question mean?
 
 ```bash

@@ -19,7 +19,7 @@ import resumes
 import store
 from store import TrackerError, _iso, utcnow
 
-STATUSES = ("queued", "in_progress", "needs_input", "ready", "submitted", "failed")
+STATUSES = ("queued", "in_progress", "needs_input", "ready", "submitted", "failed", "skipped")
 STATES = ("filled", "needs_review", "needs_answer", "approved", "skipped")
 BLOCKING = ("needs_review", "needs_answer")
 UPLOADABLE = (".pdf", ".docx")
@@ -48,7 +48,7 @@ def create(conn, opportunity_id, resume_id=None, now=None, posting_id=None):
         raise TrackerError(f"no opportunity {opportunity_id}")
     if opp["status"] != "kept":
         raise TrackerError(f"opportunity {opportunity_id} is {opp['status']}; keep it before applying")
-    existing = conn.execute("SELECT * FROM applications WHERE opportunity_id = ? AND status != 'failed' "
+    existing = conn.execute("SELECT * FROM applications WHERE opportunity_id = ? AND status NOT IN ('failed', 'skipped') "
                             "ORDER BY created_at DESC LIMIT 1", (opportunity_id,)).fetchone()
     if existing:
         return {**get(conn, existing["id"]), "existing": True}

@@ -8,7 +8,32 @@ python3 workflows/apply/run.py continue <application id> [--dry-run]
 python3 workflows/apply/run.py submit <application id>          # approve a filled company-portal application
 python3 workflows/apply/run.py regenerate <application id> <item> [--steer "more on payouts"]
 python3 workflows/apply/run.py status <application id>
+python3 workflows/apply/run.py summary [--hours 24]             # applied, answers chosen for you, skipped
 ```
+
+## Easy Apply is hands-off
+
+Easy Apply never waits for you. Each unknown field is resolved without asking,
+and a job is **skipped (and you're notified) rather than answered with a guess**:
+
+| Field | Hands-off resolution |
+|---|---|
+| New wording of a question you've answered | matched to your saved answer when the suggestion is ≥ 85% confident, and remembered |
+| Required long-form question | drafted from your resume and used as-is |
+| Screening question you've never answered | answered by the model from your resume, non-sensitive saved answers and job preferences, if ≥ 80% confident; otherwise **skip the job** |
+| Self-identification question not in your answers | "decline to answer" (the form's own decline option); never a guess; skip the job if the form has none |
+| Optional question nobody's answered | left blank (and queued in the inbox for next time) |
+| Required upload other than the resume | skip the job |
+
+The resume is always uploaded (never picked from LinkedIn's saved list by
+name, since an old file can share the name), and the agent confirms on the
+redrawn page that it's the one selected.
+
+After each application a notification says "Applied" or "Skipped … because …".
+`summary` lists every answer chosen for you (with the model's confidence and
+reasoning) so you can correct one for next time: answer it in the bank or
+inbox and it's used from then on. Company portals keep the approval step
+below.
 
 Each round: the tracker builds a packet of every answer known so far → the
 apply-agent walks the form and stops at the first unknown field → each

@@ -168,6 +168,30 @@ MIGRATIONS = [
     );
     ALTER TABLE applications ADD COLUMN posting_id TEXT;    -- which city's posting it applies through
     """,
+    # 7: 'skipped' - hands-off Easy Apply passed on a job rather than guess an answer.
+    #    SQLite can't change a CHECK constraint, so the table is rebuilt.
+    """
+    CREATE TABLE applications_new (
+        id             TEXT PRIMARY KEY,
+        opportunity_id TEXT NOT NULL REFERENCES opportunities (id),
+        resume_id      TEXT NOT NULL REFERENCES resumes (id),
+        apply_type     TEXT,
+        status         TEXT NOT NULL DEFAULT 'queued'
+                       CHECK (status IN ('queued', 'in_progress', 'needs_input', 'ready', 'submitted', 'failed',
+                                         'skipped')),
+        note           TEXT,
+        last_report    TEXT,
+        created_at     TEXT NOT NULL,
+        updated_at     TEXT NOT NULL,
+        submitted_at   TEXT,
+        apply_url      TEXT,
+        posting_id     TEXT
+    );
+    INSERT INTO applications_new SELECT id, opportunity_id, resume_id, apply_type, status, note, last_report,
+        created_at, updated_at, submitted_at, apply_url, posting_id FROM applications;
+    DROP TABLE applications;
+    ALTER TABLE applications_new RENAME TO applications;
+    """,
 ]
 
 
@@ -180,8 +204,13 @@ def connect(db_path=None):
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(p)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    # Foreign keys off while migrating: rebuilding a table (to change a CHECK) drops it
+    # while other tables still reference it. Checked again once migrations are done.
+    conn.execute("PRAGMA foreign_keys = OFF")
     migrate(conn)
+    if conn.execute("PRAGMA foreign_key_check").fetchall():
+        raise sqlite3.IntegrityError("foreign key violations after migrating jobs.db")
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
