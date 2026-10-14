@@ -229,6 +229,47 @@ class FillError(Exception):
     pass
 
 
+def _is_checked(loc):
+    try:
+        return loc.is_checked()
+    except Exception:
+        return False
+
+
+CLICK_VISIBLE_ANCESTOR_JS = """el => {
+  for (let n = el.parentElement, i = 0; n && i < 4; n = n.parentElement, i++) {
+    const r = n.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) { n.click(); return true; }
+  }
+  return false;
+}"""
+
+
+def set_choice(page, sel, want=True):
+    """Check (or uncheck) a radio or checkbox that may be styled out of reach.
+
+    Sites hide the real input off-screen behind a styled card, so a normal
+    click can fail ("outside of the viewport"). In order: Playwright's check,
+    a click dispatched on the input itself, then a click on the visible card
+    around it. Each attempt is verified; FillError if none took.
+    """
+    loc = page.locator(sel)
+    if _is_checked(loc) == want:
+        return
+    try:
+        loc.set_checked(want, force=True, timeout=3000)
+    except Exception:
+        pass
+    if _is_checked(loc) == want:
+        return
+    loc.evaluate("el => el.click()")
+    if _is_checked(loc) == want:
+        return
+    loc.evaluate(CLICK_VISIBLE_ANCESTOR_JS)
+    if _is_checked(loc) != want:
+        raise FillError("couldn't select this option: the page wouldn't accept a click on it")
+
+
 TRUTHY = {"yes", "true", "1", "checked", "i agree", "agree", "y"}
 
 
@@ -244,7 +285,7 @@ def fill_field(page, field, value, pause=0.0):
             if opt is None:
                 raise FillError(f"{w!r} matches none of {field['options']}")
             i = field["options"].index(opt)
-            page.locator(f'[data-jh-id="{field["id"]}-{i}"]').check(force=True)
+            set_choice(page, f'[data-jh-id="{field["id"]}-{i}"]')
         chosen = [match_option(w, field["options"]) for w in wanted]
         return chosen[0] if t == "radio" else chosen
     if t == "button_choice":
@@ -262,7 +303,7 @@ def fill_field(page, field, value, pause=0.0):
         result = opt
     elif t == "checkbox":
         want = str(value).strip().lower() in TRUTHY
-        loc.set_checked(want, force=True)
+        set_choice(page, sel, want)
         result = want
     elif t == "file":
         loc.set_input_files(value)

@@ -9,6 +9,8 @@
 <style>
   [hidden] { display: none !important; }
   .sr { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  /* LinkedIn's resume cards: the real radio sits off-screen; Playwright can't click it there. */
+  .offscreen { position: absolute; left: -10000px; }
   [role=dialog] { border: 1px solid #999; padding: 16px; width: 600px; }
   .artdeco-inline-feedback--error { color: red; }
 </style>
@@ -37,8 +39,8 @@
     <h3>Resume</h3>
     <fieldset>
       <legend>Choose a resume</legend>
-      <label><input class="sr" type="radio" name="resume" value="a"> Old Resume 2024.pdf</label>
-      <label><input class="sr" type="radio" name="resume" value="b" checked> Jane Doe - Resume.pdf</label>
+      <label><input class="offscreen" type="radio" name="resume" value="a" checked> Old Resume 2024.pdf</label>
+      <label><input class="offscreen" type="radio" name="resume" value="b"> Jane Doe - Resume.pdf</label>
     </fieldset>
     <label for="resume-upload">Upload resume</label>
     <input id="resume-upload" type="file" accept=".pdf,.docx" class="sr">

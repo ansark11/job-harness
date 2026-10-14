@@ -167,11 +167,17 @@ class Walk:
         if cards:
             match = next((o for o in cards["options"] if name.lower() in (o or "").lower()), None)
             if match:
-                forms.fill_field(self.page, cards, match)
-                cards.update(outcome="filled", source="resume", filled=match)
-                if upload:
-                    upload["outcome"] = "not_needed"
-                return 0
+                try:
+                    forms.fill_field(self.page, cards, match)
+                    cards.update(outcome="filled", source="resume", filled=match)
+                    if upload:
+                        upload["outcome"] = "not_needed"
+                    return 0
+                except forms.FillError as e:
+                    if not upload:
+                        cards.update(outcome="unknown", error=f"couldn't select {match}: {e}")
+                        return 1
+                    # Couldn't pick the existing copy: upload ours instead, below.
         if upload:
             forms.fill_field(self.page, upload, self.packet["resume_file"])
             upload.update(outcome="filled", source="resume", filled=name)
