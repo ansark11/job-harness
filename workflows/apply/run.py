@@ -99,6 +99,8 @@ def jurisdiction(location):
 
 
 def kind_of(field):
+    if field.get("resume"):
+        return "resume"
     if field["type"] == "file":
         return "file"
     if field["type"] == "textarea" or (field["type"] == "text" and (field.get("maxlength") or 0) >= LONG_FORM_MIN_MAXLENGTH):
@@ -161,7 +163,13 @@ class Applier:
                 continue
             base = {"key": f["key"], "label": f["label"], "field_type": f["type"], "options": f.get("options"),
                     "required": f.get("required", False), "page": f.get("page"), "kind": kind_of(f)}
-            if base["kind"] == "file":
+            if base["kind"] == "resume":
+                # Never answered by the bank or the model: only the resume you chose is ever sent.
+                why = f.get("error") or "couldn't select your resume"
+                if hands:
+                    self.skip_reasons.append(f"resume: {why}")
+                out.append({**base, "kind": "file", "state": "needs_answer", "meta": {"note": why}})
+            elif base["kind"] == "file":
                 if hands and base["required"]:
                     self.skip_reasons.append(f"asks for an upload the agent doesn't handle ({base['label']})")
                 out.append({**base, "state": "needs_answer" if base["required"] else "skipped",

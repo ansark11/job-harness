@@ -192,6 +192,10 @@ MIGRATIONS = [
     DROP TABLE applications;
     ALTER TABLE applications_new RENAME TO applications;
     """,
+    # 8: Easy Apply selects this resume from LinkedIn's saved list (by its file name) instead of uploading
+    """
+    ALTER TABLE resumes ADD COLUMN linkedin_name TEXT;
+    """,
 ]
 
 

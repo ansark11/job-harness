@@ -356,6 +356,16 @@ class HandsOffTests(FlowBase):
         self.assertEqual(self.svc.submitted[trans["key"]], "I don't wish to answer")
         self.assertEqual(self.svc.answerer_inputs, [])                         # no model call for it
 
+    def test_resume_problem_skips_and_never_reaches_the_model(self):
+        cards = {"key": "choose a resume", "label": "Choose a resume", "type": "radio", "required": True,
+                 "options": ["W Jane Doe - Resume.docx"], "resume": True, "page": 2, "outcome": "unknown",
+                 "error": "'Jane Doe - Resume.pdf' isn't in your LinkedIn saved resumes (W Jane Doe - Resume.docx)"}
+        self.svc.agent = lambda packet, args: {"status": "needs_input", "fields": [cards]}
+        code, out = self.wf("start", "1")
+        self.assertEqual(out["status"], "skipped")
+        self.assertIn("resume: 'Jane Doe - Resume.pdf' isn't in your LinkedIn saved resumes", out["note"])
+        self.assertEqual(self.svc.answerer_inputs, [])
+
     def test_summary_lists_submissions_and_choices(self):
         self.svc.model_answers = {"driver": {"answer": "Yes", "confidence": 0.9, "basis": "Commute."}}
         self.wf("start", "1")

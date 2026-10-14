@@ -202,4 +202,5 @@ def packet(conn, app_id):
     return {"application_id": app_id,
             "job": {**{k: app["job"][k] for k in ("id", "url", "apply_type")}, "apply_url": app["apply_url"]},
             "resume_file": app["resume"]["file_path"], "resume_upload_name": f"{app['resume']['name']}.{ext}",
+            "linkedin_resume_name": app["resume"].get("linkedin_name"),
             "answers": answers, "skip": skip, "blocking": app["blocking"]}

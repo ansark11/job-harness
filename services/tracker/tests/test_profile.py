@@ -118,6 +118,13 @@ class ResumeTests(TempDb):
         with self.assertRaises(store.TrackerError):
             resumes.get(self.conn, rec["id"])
 
+    def test_linkedin_name(self):
+        make_docx(self.dir / "r.docx", RESUME_LINES)
+        rec = resumes.add(self.conn, self.dir / "r.docx")
+        self.assertIsNone(rec["linkedin_name"])
+        self.assertEqual(resumes.set_linkedin_name(self.conn, rec["id"], "Jane Doe - Resume.pdf")["linkedin_name"],
+                         "Jane Doe - Resume.pdf")
+
     def test_same_file_twice_returns_existing(self):
         make_docx(self.dir / "a.docx", RESUME_LINES)
         first = resumes.add(self.conn, self.dir / "a.docx")

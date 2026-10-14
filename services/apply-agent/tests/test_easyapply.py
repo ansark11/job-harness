@@ -50,10 +50,10 @@ class EasyApplyTests(unittest.TestCase):
         self.page.close()
         self.tmp.cleanup()
 
-    def packet(self, answers=None, skip=(), url=PAGE, upload_name="Jane Doe - Resume.pdf"):
+    def packet(self, answers=None, skip=(), url=PAGE, linkedin_name="Jane Doe - Resume Optimized.pdf"):
         return {"application_id": "a1", "job": {"id": "9", "url": url, "apply_type": "easy"},
-                "resume_file": str(self.resume), "resume_upload_name": upload_name,
-                "answers": answers or {}, "skip": list(skip)}
+                "resume_file": str(self.resume), "resume_upload_name": "Jane Doe - Resume.pdf",
+                "linkedin_resume_name": linkedin_name, "answers": answers or {}, "skip": list(skip)}
 
     def walk(self, packet, mode="fill", dry_run=False, cap_ok=lambda: True):
         return easyapply.Walk(self.page, packet, mode, dry_run, pause=None).run(cap_ok)
@@ -68,17 +68,24 @@ class EasyApplyTests(unittest.TestCase):
         self.assertTrue(phone["required"])
         self.assertIn("discarded", self.page.evaluate("window.events"))
 
-    def test_resume_is_always_uploaded_never_picked_by_name(self):
-        # An old card shares the resume's name; it must not be chosen. The upload adds a new
-        # card, the list redraws, and the agent confirms the new card is the selected one.
+    def test_selects_the_named_saved_resume_exactly(self):
+        # The .docx and an older PDF have similar names; only the exact file name counts.
         r = self.walk(self.packet({PHONE: FULL[PHONE]}))
         self.assertEqual(r["status"], "needs_input")
-        by_key = {f["key"]: f for f in r["fields"]}
-        self.assertEqual(by_key["upload resume"]["outcome"], "filled")
-        self.assertEqual(by_key["choose a resume"]["outcome"], "filled")
-        self.assertTrue(by_key["choose a resume"]["filled"].startswith("Jane Doe - Resume.pdf "))
-        self.assertNotIn("1/8/2025", by_key["choose a resume"]["filled"])
+        cards = next(f for f in r["fields"] if f["key"] == "choose a resume")
+        self.assertEqual((cards["outcome"], cards["resume"]), ("filled", True))
+        self.assertEqual(cards["filled"], "PDF Jane Doe - Resume Optimized.pdf 10/1/2026")
+        self.assertEqual(self.page.evaluate("chosenResume"), "c")
         self.assertEqual(r["unknown"], [COVER])                    # optional: workflow will skip it
+
+    def test_missing_or_unset_saved_resume_is_unknown_not_guessed(self):
+        r = self.walk(self.packet({PHONE: FULL[PHONE]}, linkedin_name="Jane Doe - Resume Optimized.doc.pdf"))
+        cards = next(f for f in r["fields"] if f["key"] == "choose a resume")
+        self.assertEqual(cards["outcome"], "unknown")
+        self.assertIn("isn't in your LinkedIn saved resumes", cards["error"])
+        r = self.walk(self.packet({PHONE: FULL[PHONE]}, linkedin_name=None))
+        cards = next(f for f in r["fields"] if f["key"] == "choose a resume")
+        self.assertIn("no LinkedIn resume name is set", cards["error"])
 
     def test_choice_survives_a_redraw(self):
         import forms
@@ -86,7 +93,7 @@ class EasyApplyTests(unittest.TestCase):
         self.page.click("#easy")
         self.page.evaluate("document.querySelectorAll('section').forEach(s => s.hidden = Number(s.dataset.step) !== 2)")
         field = next(f for f in forms.extract_fields(self.page, easyapply.DIALOG) if f["type"] == "radio")
-        forms.fill_field(self.page, field, "Jane Doe - Resume.pdf 1/8/2025", root=easyapply.DIALOG)
+        forms.fill_field(self.page, field, "PDF Jane Doe - Resume.pdf 1/8/2025", root=easyapply.DIALOG)
         self.assertEqual(self.page.evaluate("chosenResume"), "b")
 
     def test_page_three_unknowns_with_types_and_options(self):
@@ -124,7 +131,7 @@ class EasyApplyTests(unittest.TestCase):
         r = self.walk(self.packet(FULL, skip=[COVER]), mode="submit")
         self.assertEqual(r["status"], "submitted")
         sent = self.page.evaluate("window.submitted")
-        self.assertEqual(sent, {"phone": "416-555-0100", "resume": "new", "upload": "Jane Doe - Resume.pdf",
+        self.assertEqual(sent, {"phone": "416-555-0100", "resume": "c",
                                 "sponsor": "No",
                                 "hybrid": "hyb-y",
                                 "years": "8", "gender": "I don't wish to answer", "why": "I led payouts at a fintech."})
@@ -157,6 +164,7 @@ class CliTests(unittest.TestCase):
             packet = Path(tmp) / "packet.json"
             packet.write_text(json.dumps({"application_id": "a1", "job": {"id": "9", "url": PAGE, "apply_type": "easy"},
                                           "resume_file": str(resume), "resume_upload_name": "Jane Doe - Resume.pdf",
+                                          "linkedin_resume_name": "Jane Doe - Resume Optimized.pdf",
                                           "answers": FULL, "skip": [COVER]}))
             out = io.StringIO()
             with redirect_stdout(out):

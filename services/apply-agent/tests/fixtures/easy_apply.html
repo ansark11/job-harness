@@ -40,8 +40,8 @@
     <!-- Like LinkedIn: the list redraws (new nodes) on every change, an old file shares the
          current resume's name, and an upload adds a new card and selects it. -->
     <fieldset id="resumes"></fieldset>
-    <label for="resume-upload">Upload resume</label>
-    <input id="resume-upload" type="file" accept=".pdf,.docx" class="sr">
+    <!-- LinkedIn: no file input, just a button that opens the file picker. -->
+    <button type="button" id="resume-upload">Upload resume</button>
     <label for="cover-upload">Upload cover letter</label>
     <input id="cover-upload" type="file" class="sr">
   </section>
@@ -131,7 +131,8 @@
     if (!ok) { window.events.push('blocked'); }
     return ok;
   }
-  const resumes = [{v: 'a', t: 'Old Resume 2024.pdf'}, {v: 'b', t: 'Jane Doe - Resume.pdf 1/8/2025'}];
+  const resumes = [{v: 'a', t: 'W Jane Doe - Resume Optimized.docx'}, {v: 'b', t: 'PDF Jane Doe - Resume.pdf 1/8/2025'},
+                   {v: 'c', t: 'PDF Jane Doe - Resume Optimized.pdf 10/1/2026'}];
   let chosenResume = 'a';
   function renderResumes() {
     $('resumes').innerHTML = '<legend>Choose a resume</legend>' + resumes.map(r =>
@@ -139,12 +140,6 @@
   }
   renderResumes();
   $('resumes').addEventListener('change', e => { chosenResume = e.target.value; setTimeout(renderResumes, 50); });
-  $('resume-upload').addEventListener('change', e => {
-    const f = e.target.files[0];
-    resumes.unshift({v: 'new', t: `${f.name} ${new Date().toLocaleDateString()}`});
-    chosenResume = 'new';
-    setTimeout(renderResumes, 300);
-  });
   $('easy').onclick = () => { setOpen(true); step = 1; show(); window.events.push('opened'); };
   $('next').onclick = () => { if (valid()) { step++; show(); } };
   $('review').onclick = () => { if (valid()) { step = 4; show(); } };
@@ -152,7 +147,6 @@
     window.events.push('submitted');
     window.submitted = {
       phone: $('phone').value, resume: chosenResume,
-      upload: $('resume-upload').files.length ? $('resume-upload').files[0].name : null,
       sponsor: (document.querySelector('input[name=sponsor]:checked') || {}).value,
       hybrid: (document.querySelector('input[name="radio-group-_r_t_"]:checked') || {}).id || null,
       years: $('years').value, gender: $('gender').value, why: $('why').value };

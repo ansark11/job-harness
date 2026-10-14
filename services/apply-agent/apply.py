@@ -5,7 +5,8 @@
 
 packet.json (built by workflows/apply):
   {"application_id", "job": {"id", "url", "apply_type", "apply_url"},   # apply_url: the portal, once known
-   "resume_file", "resume_upload_name",          # uploaded under the readable name
+   "resume_file", "resume_upload_name",          # portals: uploaded under the readable name
+   "linkedin_resume_name",                       # Easy Apply: selected from LinkedIn's saved resumes
    "answers": {<field key>: <value>},            # keys are forms.normalize(label)
    "skip": [<field key>, ...]}                   # leave these blank
 

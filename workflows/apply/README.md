@@ -25,9 +25,13 @@ and a job is **skipped (and you're notified) rather than answered with a guess**
 | Optional question nobody's answered | left blank (and queued in the inbox for next time) |
 | Required upload other than the resume | skip the job |
 
-The resume is always uploaded (never picked from LinkedIn's saved list by
-name, since an old file can share the name), and the agent confirms on the
-redrawn page that it's the one selected.
+**Resume on Easy Apply:** the agent selects the resume from your LinkedIn saved
+resumes whose name contains the exact file name set with `tracker.py resume
+linkedin-name <id> "<file name>"` (extension included, so a .docx never
+stands in for the .pdf), and confirms it's selected. It never uploads. If
+that file isn't in the list, the job is skipped. Resume fields are never
+answered by the answer bank or the model. Company portals upload the
+resume's file instead.
 
 After each application a notification says "Applied" or "Skipped … because …".
 `summary` lists every answer chosen for you (with the model's confidence and

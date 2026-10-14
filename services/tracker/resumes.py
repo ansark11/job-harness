@@ -92,7 +92,8 @@ def _pdf_text(path):
 
 def _record(row):
     return {k: row[k] for k in ("id", "name", "file_path", "text_path", "added_at")} | \
-        {"is_default": bool(row["is_default"]), "text_source": row["text_source"] or row["file_path"]}
+        {"is_default": bool(row["is_default"]), "text_source": row["text_source"] or row["file_path"],
+         "linkedin_name": row["linkedin_name"]}
 
 
 def add(conn, src, name=None, make_default=False, text_from=None, now=None):
@@ -149,6 +150,14 @@ def set_text_source(conn, rid, src):
     _store_text_source(conn, rid, src)
     Path(rec["text_path"]).write_text(text)
     return {**get(conn, rid), "characters": len(text), "preview": text[:300]}
+
+
+def set_linkedin_name(conn, rid, name):
+    """The file name of this resume in LinkedIn's saved resumes; Easy Apply selects it there."""
+    get(conn, rid)
+    with conn:
+        conn.execute("UPDATE resumes SET linkedin_name = ? WHERE id = ?", (name.strip() or None, rid))
+    return get(conn, rid)
 
 
 def remove(conn, rid):

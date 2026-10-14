@@ -14,6 +14,7 @@ Resumes
     tracker.py resume add <file> [--name NAME] [--default] [--text-from <file>]   # upload file; text source
     tracker.py resume list | show <id> [--text] | default [<id>] | refresh <id>
     tracker.py resume text <id> <file>          # read this resume's text from another file
+    tracker.py resume linkedin-name <id> "<file name>"   # Easy Apply selects this from LinkedIn's saved resumes
     tracker.py resume remove <id>
 
 Answer bank (reusable answers to application questions)
@@ -106,6 +107,9 @@ def build_parser():
     r.add_argument("file")
     r = s.add_parser("remove")
     r.add_argument("id")
+    r = s.add_parser("linkedin-name", help="the resume's file name in LinkedIn's saved resumes")
+    r.add_argument("id")
+    r.add_argument("name")
     r = s.add_parser("show")
     r.add_argument("id")
     r.add_argument("--text", action="store_true")
@@ -277,6 +281,8 @@ def cmd_resume(conn, args, run):
         return resumes.set_text_source(conn, args.id, args.file)
     if args.sub == "remove":
         return resumes.remove(conn, args.id)
+    if args.sub == "linkedin-name":
+        return resumes.set_linkedin_name(conn, args.id, args.name)
     return resumes.set_default(conn, args.id) if args.id else resumes.default(conn)
 
 

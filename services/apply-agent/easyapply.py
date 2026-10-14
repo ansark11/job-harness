@@ -159,38 +159,40 @@ class Walk:
         return f["type"] == "file" and not re.search(r"cover|letter|transcript|portfolio", f["label"], re.I)
 
     def choose_resume(self, resume_fields):
-        """Upload the chosen resume, then confirm from a fresh read that it's the one selected.
+        """Select the resume named in the packet from LinkedIn's saved resumes; never upload.
 
-        Never picks an existing card by name: an old file can share the name
-        (two "Resume.pdf" from 2024 and 2025). Returns the number of fields left
-        unknown (0 or 1)."""
-        name = self.packet.get("resume_upload_name") or Path(self.packet["resume_file"]).name
+        The card must contain the exact file name, extension included ("…Resume Optimized.pdf"
+        is not "…Resume Optimized.docx"), and the selection is confirmed from a fresh read.
+        Returns the number of fields left unknown (0 or 1)."""
+        for f in resume_fields:
+            f["resume"] = True                     # never answered by the bank or the model
+        name = (self.packet.get("linkedin_resume_name") or "").strip()
         cards = next((f for f in resume_fields if f["type"] == "radio"), None)
-        upload = next((f for f in resume_fields if f["type"] == "file"), None)
-        if upload is None:
-            (cards or resume_fields[0]).update(outcome="unknown",
-                                               error="no upload button for the resume, so it can't be confirmed")
+        for f in resume_fields:
+            if f is not cards:
+                f["outcome"] = "not_needed"
+        if not name:
+            (cards or resume_fields[0]).update(outcome="unknown", error="no LinkedIn resume name is set: "
+                                               "tracker.py resume linkedin-name <id> \"<file name>\"")
+            return 1
+        if cards is None:
+            resume_fields[0].update(outcome="unknown", error="LinkedIn showed no saved resumes to choose from")
+            return 1
+        matches = [o for o in cards["options"] if name.lower() in (o or "").lower()]
+        if not matches:
+            cards.update(outcome="unknown", error=f"{name!r} isn't in your LinkedIn saved resumes "
+                                                  f"({', '.join(cards['options'])})")
             return 1
         try:
-            forms.fill_field(self.page, upload, self.packet["resume_file"])
-        except Exception as e:
-            upload.update(outcome="unknown", error=f"resume upload failed: {e}")
+            forms.fill_field(self.page, cards, matches[0], root=DIALOG)     # newest first, as LinkedIn lists them
+        except forms.FillError as e:
+            cards.update(outcome="unknown", error=f"couldn't select {matches[0]!r}: {e}")
             return 1
-        upload.update(outcome="filled", source="resume", filled=name)
-        if cards:
-            # LinkedIn adds the upload as a new card and selects it; wait for that to show.
-            stem = Path(name).stem.lower()
-            deadline = time.monotonic() + 15
-            selected = None
-            while time.monotonic() < deadline:
-                selected = forms.read_value(self.page, cards["key"], DIALOG)
-                if selected and stem in selected.lower():
-                    break
-                time.sleep(1)
-            if not (selected and stem in selected.lower()):
-                cards.update(outcome="unknown", error=f"uploaded {name} but the selected resume is {selected!r}")
-                return 1
-            cards.update(outcome="filled", source="resume", filled=selected)
+        selected = forms.read_value(self.page, cards["key"], DIALOG, wait=5)
+        if not (selected and name.lower() in selected.lower()):
+            cards.update(outcome="unknown", error=f"selected {matches[0]!r} but the form shows {selected!r}")
+            return 1
+        cards.update(outcome="filled", source="resume", filled=selected)
         return 0
 
     def page_errors(self):
