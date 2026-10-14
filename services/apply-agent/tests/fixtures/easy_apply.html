@@ -37,11 +37,9 @@
 
   <section data-step="2" hidden>
     <h3>Resume</h3>
-    <fieldset>
-      <legend>Choose a resume</legend>
-      <label><input class="offscreen" type="radio" name="resume" value="a" checked> Old Resume 2024.pdf</label>
-      <label><input class="offscreen" type="radio" name="resume" value="b"> Jane Doe - Resume.pdf</label>
-    </fieldset>
+    <!-- Like LinkedIn: the list redraws (new nodes) on every change, an old file shares the
+         current resume's name, and an upload adds a new card and selects it. -->
+    <fieldset id="resumes"></fieldset>
     <label for="resume-upload">Upload resume</label>
     <input id="resume-upload" type="file" accept=".pdf,.docx" class="sr">
     <label for="cover-upload">Upload cover letter</label>
@@ -133,13 +131,27 @@
     if (!ok) { window.events.push('blocked'); }
     return ok;
   }
+  const resumes = [{v: 'a', t: 'Old Resume 2024.pdf'}, {v: 'b', t: 'Jane Doe - Resume.pdf 1/8/2025'}];
+  let chosenResume = 'a';
+  function renderResumes() {
+    $('resumes').innerHTML = '<legend>Choose a resume</legend>' + resumes.map(r =>
+      `<label><input class="offscreen" type="radio" name="resume" value="${r.v}" ${r.v === chosenResume ? 'checked' : ''}> ${r.t}</label>`).join('');
+  }
+  renderResumes();
+  $('resumes').addEventListener('change', e => { chosenResume = e.target.value; setTimeout(renderResumes, 50); });
+  $('resume-upload').addEventListener('change', e => {
+    const f = e.target.files[0];
+    resumes.unshift({v: 'new', t: `${f.name} ${new Date().toLocaleDateString()}`});
+    chosenResume = 'new';
+    setTimeout(renderResumes, 300);
+  });
   $('easy').onclick = () => { setOpen(true); step = 1; show(); window.events.push('opened'); };
   $('next').onclick = () => { if (valid()) { step++; show(); } };
   $('review').onclick = () => { if (valid()) { step = 4; show(); } };
   $('submit').onclick = () => {
     window.events.push('submitted');
     window.submitted = {
-      phone: $('phone').value, resume: (document.querySelector('input[name=resume]:checked') || {}).value,
+      phone: $('phone').value, resume: chosenResume,
       upload: $('resume-upload').files.length ? $('resume-upload').files[0].name : null,
       sponsor: (document.querySelector('input[name=sponsor]:checked') || {}).value,
       hybrid: (document.querySelector('input[name="radio-group-_r_t_"]:checked') || {}).id || null,

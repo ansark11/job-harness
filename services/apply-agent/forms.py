@@ -102,7 +102,9 @@ EXTRACT_JS = r"""
       if (groups.has(key)) continue;
       groups.add(key);
       const members = [...named];
-      const id = next();
+      // Keep an id already given on an earlier read, so fields read before stay addressable.
+      const prior = members[0].getAttribute('data-jh-id');
+      const id = prior && /-\d+$/.test(prior) ? prior.replace(/-\d+$/, '') : next();
       members.forEach((m, i) => m.setAttribute('data-jh-id', `${id}-${i}`));
       const legend = groupLabel(el);
       const checked = members.filter(m => m.checked).map(optionLabel);
@@ -114,7 +116,7 @@ EXTRACT_JS = r"""
                 value: type === 'radio' ? (checked[0] || null) : (checked.length ? checked : null)});
       continue;
     }
-    const id = next();
+    const id = el.getAttribute('data-jh-id') || next();
     el.setAttribute('data-jh-id', id);
     const label = labelFor(el);
     const d = {id, type, label, required: el.required || el.getAttribute('aria-required') === 'true'
@@ -251,30 +253,52 @@ def set_choice(page, sel, want=True):
     Sites hide the real input off-screen behind a styled card, so a normal
     click can fail ("outside of the viewport"). In order: Playwright's check,
     a click dispatched on the input itself, then a click on the visible card
-    around it. Each attempt is verified; FillError if none took.
+    around it. Each attempt is verified. Returns True when verified, None when
+    the page redrew the control (the caller re-reads the form to verify);
+    FillError if no attempt took.
     """
     loc = page.locator(sel)
-    if _is_checked(loc) == want:
-        return
-    try:
-        loc.set_checked(want, force=True, timeout=3000)
-    except Exception:
-        pass
-    if _is_checked(loc) == want:
-        return
-    loc.evaluate("el => el.click()")
-    if _is_checked(loc) == want:
-        return
-    loc.evaluate(CLICK_VISIBLE_ANCESTOR_JS)
-    if _is_checked(loc) != want:
-        raise FillError("couldn't select this option: the page wouldn't accept a click on it")
+
+    def state():
+        return "gone" if loc.count() == 0 else _is_checked(loc)
+
+    if state() == want:
+        return True
+    attempts = (lambda: loc.set_checked(want, force=True, timeout=3000),
+                lambda: loc.evaluate("el => el.click()", timeout=2000),
+                lambda: loc.evaluate(CLICK_VISIBLE_ANCESTOR_JS, timeout=2000))
+    for attempt in attempts:
+        try:
+            attempt()
+        except Exception:
+            pass
+        now = state()
+        if now == "gone":
+            return None
+        if now == want:
+            return True
+    raise FillError("couldn't select this option: the page wouldn't accept a click on it")
+
+
+def read_value(page, key, root=None, wait=0.0):
+    """A field's current value after the page may have redrawn it (None if it's gone).
+    Waits up to `wait` seconds for the field to reappear."""
+    deadline = time.monotonic() + wait
+    while True:
+        for f in extract_fields(page, root):
+            if f["key"] == key:
+                return f["value"]
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(0.5)
 
 
 TRUTHY = {"yes", "true", "1", "checked", "i agree", "agree", "y"}
 
 
-def fill_field(page, field, value, pause=0.0):
-    """Put `value` into `field`. Raises FillError when a choice can't be matched."""
+def fill_field(page, field, value, pause=0.0, root=None):
+    """Put `value` into `field`. Raises FillError when a choice can't be matched or won't stick.
+    `root` is the container the field was read from, for re-reading after a redraw."""
     t = field["type"]
     sel = f'[data-jh-id="{field["id"]}"]'
     if t in ("radio", "checkbox_group"):
@@ -285,7 +309,11 @@ def fill_field(page, field, value, pause=0.0):
             if opt is None:
                 raise FillError(f"{w!r} matches none of {field['options']}")
             i = field["options"].index(opt)
-            set_choice(page, f'[data-jh-id="{field["id"]}-{i}"]')
+            if set_choice(page, f'[data-jh-id="{field["id"]}-{i}"]') is None and t == "radio":
+                # The site redrew the options on click: confirm from a fresh read.
+                now = read_value(page, field["key"], root, wait=5)
+                if normalize(now) != normalize(opt):
+                    raise FillError(f"selected {opt!r} but the form now shows {now!r}")
         chosen = [match_option(w, field["options"]) for w in wanted]
         return chosen[0] if t == "radio" else chosen
     if t == "button_choice":

@@ -68,19 +68,26 @@ class EasyApplyTests(unittest.TestCase):
         self.assertTrue(phone["required"])
         self.assertIn("discarded", self.page.evaluate("window.events"))
 
-    def test_resume_selected_by_name_and_cover_letter_reported(self):
+    def test_resume_is_always_uploaded_never_picked_by_name(self):
+        # An old card shares the resume's name; it must not be chosen. The upload adds a new
+        # card, the list redraws, and the agent confirms the new card is the selected one.
         r = self.walk(self.packet({PHONE: FULL[PHONE]}))
         self.assertEqual(r["status"], "needs_input")
         by_key = {f["key"]: f for f in r["fields"]}
+        self.assertEqual(by_key["upload resume"]["outcome"], "filled")
         self.assertEqual(by_key["choose a resume"]["outcome"], "filled")
-        self.assertEqual(by_key["upload resume"]["outcome"], "not_needed")
+        self.assertTrue(by_key["choose a resume"]["filled"].startswith("Jane Doe - Resume.pdf "))
+        self.assertNotIn("1/8/2025", by_key["choose a resume"]["filled"])
         self.assertEqual(r["unknown"], [COVER])                    # optional: workflow will skip it
 
-    def test_resume_uploaded_when_not_on_linkedin(self):
-        r = self.walk(self.packet({PHONE: FULL[PHONE]}, skip=[COVER], upload_name="New Resume.pdf"))
-        by_key = {f["key"]: f for f in r["fields"]}
-        self.assertEqual(by_key["upload resume"]["outcome"], "filled")
-        self.assertEqual(by_key["choose a resume"]["outcome"], "replaced_by_upload")
+    def test_choice_survives_a_redraw(self):
+        import forms
+        self.page.goto(PAGE)
+        self.page.click("#easy")
+        self.page.evaluate("document.querySelectorAll('section').forEach(s => s.hidden = Number(s.dataset.step) !== 2)")
+        field = next(f for f in forms.extract_fields(self.page, easyapply.DIALOG) if f["type"] == "radio")
+        forms.fill_field(self.page, field, "Jane Doe - Resume.pdf 1/8/2025", root=easyapply.DIALOG)
+        self.assertEqual(self.page.evaluate("chosenResume"), "b")
 
     def test_page_three_unknowns_with_types_and_options(self):
         r = self.walk(self.packet({PHONE: FULL[PHONE]}, skip=[COVER]))
@@ -117,7 +124,8 @@ class EasyApplyTests(unittest.TestCase):
         r = self.walk(self.packet(FULL, skip=[COVER]), mode="submit")
         self.assertEqual(r["status"], "submitted")
         sent = self.page.evaluate("window.submitted")
-        self.assertEqual(sent, {"phone": "416-555-0100", "resume": "b", "upload": None, "sponsor": "No",
+        self.assertEqual(sent, {"phone": "416-555-0100", "resume": "new", "upload": "Jane Doe - Resume.pdf",
+                                "sponsor": "No",
                                 "hybrid": "hyb-y",
                                 "years": "8", "gender": "I don't wish to answer", "why": "I led payouts at a fintech."})
         self.assertNotIn("discarded", self.page.evaluate("window.events"))

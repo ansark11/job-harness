@@ -137,7 +137,7 @@ class Walk:
             key = f["key"]
             if key in self.answers:
                 try:
-                    f["filled"] = forms.fill_field(self.page, f, self.answers[key])
+                    f["filled"] = forms.fill_field(self.page, f, self.answers[key], root=DIALOG)
                     f["outcome"], f["source"] = "filled", "packet"
                 except forms.FillError as e:
                     f["outcome"], f["error"] = "unknown", str(e)
@@ -159,33 +159,39 @@ class Walk:
         return f["type"] == "file" and not re.search(r"cover|letter|transcript|portfolio", f["label"], re.I)
 
     def choose_resume(self, resume_fields):
-        """Pick our resume: select it if LinkedIn already has it by name, else upload it.
-        Returns the number of fields left unknown (0 or 1)."""
+        """Upload the chosen resume, then confirm from a fresh read that it's the one selected.
+
+        Never picks an existing card by name: an old file can share the name
+        (two "Resume.pdf" from 2024 and 2025). Returns the number of fields left
+        unknown (0 or 1)."""
         name = self.packet.get("resume_upload_name") or Path(self.packet["resume_file"]).name
         cards = next((f for f in resume_fields if f["type"] == "radio"), None)
         upload = next((f for f in resume_fields if f["type"] == "file"), None)
-        if cards:
-            match = next((o for o in cards["options"] if name.lower() in (o or "").lower()), None)
-            if match:
-                try:
-                    forms.fill_field(self.page, cards, match)
-                    cards.update(outcome="filled", source="resume", filled=match)
-                    if upload:
-                        upload["outcome"] = "not_needed"
-                    return 0
-                except forms.FillError as e:
-                    if not upload:
-                        cards.update(outcome="unknown", error=f"couldn't select {match}: {e}")
-                        return 1
-                    # Couldn't pick the existing copy: upload ours instead, below.
-        if upload:
+        if upload is None:
+            (cards or resume_fields[0]).update(outcome="unknown",
+                                               error="no upload button for the resume, so it can't be confirmed")
+            return 1
+        try:
             forms.fill_field(self.page, upload, self.packet["resume_file"])
-            upload.update(outcome="filled", source="resume", filled=name)
-            if cards:
-                cards["outcome"] = "replaced_by_upload"
-            return 0
-        cards.update(outcome="unknown", error=f"{name} isn't among LinkedIn's resumes and there's no upload button")
-        return 1
+        except Exception as e:
+            upload.update(outcome="unknown", error=f"resume upload failed: {e}")
+            return 1
+        upload.update(outcome="filled", source="resume", filled=name)
+        if cards:
+            # LinkedIn adds the upload as a new card and selects it; wait for that to show.
+            stem = Path(name).stem.lower()
+            deadline = time.monotonic() + 15
+            selected = None
+            while time.monotonic() < deadline:
+                selected = forms.read_value(self.page, cards["key"], DIALOG)
+                if selected and stem in selected.lower():
+                    break
+                time.sleep(1)
+            if not (selected and stem in selected.lower()):
+                cards.update(outcome="unknown", error=f"uploaded {name} but the selected resume is {selected!r}")
+                return 1
+            cards.update(outcome="filled", source="resume", filled=selected)
+        return 0
 
     def page_errors(self):
         loc = self.page.locator(DIALOG).first.locator("[role=alert], .artdeco-inline-feedback--error")
