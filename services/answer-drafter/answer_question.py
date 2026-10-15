@@ -5,9 +5,8 @@
         --resume resume.txt --profile profile.json [--field-type radio] [--options '["Yes","No"]']
 
 profile.json: {"answers": [{"question", "answer"}, ...], "preferences": {...}} - the
-candidate's non-sensitive saved answers (work authorization, relocation, notice period...)
-and job preferences (locations, work modes). Self-identification answers are never
-included, and this tool is never used for self-identification questions.
+candidate's saved answers (work authorization, relocation, self-identification...) and
+job preferences (locations, work modes). Contact details are never included.
 
 The model proposes; code checks: for a choice field the answer must be one of the
 options (otherwise it's dropped). The caller decides what confidence is enough to
@@ -44,6 +43,10 @@ Rules:
 - Years of experience: compute from the resume's dates; count only experience that clearly applies.
 - Willingness questions (relocation, onsite days, travel, start date): use the saved answers and
   preferences. If they don't settle it, give your best answer with low confidence.
+- Self-identification questions (gender, ethnicity, disability, veteran status...): choose the
+  option that means the same as the candidate's saved answer. Don't add anything they didn't say
+  (e.g. "Man" is not "Cisgender male"); if no option means the same, choose the option that
+  declines to answer, with high confidence. Never infer these from the resume.
 - {choice_rule}
 - confidence: 0 to 1, how sure you are this is the answer the candidate would give. Use 0.9+ only
   when the facts state it directly; 0.5 or less when you're inferring.

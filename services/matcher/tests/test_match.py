@@ -106,6 +106,15 @@ class MatchPostingsTests(unittest.TestCase):
         self.assertEqual(stats["model_errors"], 0)
 
 
+class ContactScrubTests(unittest.TestCase):
+    def test_contact_shapes_never_reach_the_model(self):
+        sent = []
+        llm.call_json("Reach me at jane@x.com or (647) 779-7348, linkedin.com/in/jane. Pay $150,000-$200,000; "
+                      "req 4478553230.", "s", {}, lambda body: sent.append(body) or reply({}))
+        self.assertEqual(sent[0]["input"], "Reach me at [email] or [phone], [linkedin]. Pay $150,000-$200,000; "
+                                           "req 4478553230.")
+
+
 class TransientFailureTests(unittest.TestCase):
     def setUp(self):
         self.sleeps = []

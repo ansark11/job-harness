@@ -26,12 +26,13 @@ python3 answer_question.py --question "Can you work onsite Tue/Thu in SF?" --job
                            --profile profile.json [--field-type radio] [--options '["Yes","No"]']
 ```
 
-Answers from the resume, your **non-sensitive** saved answers and your job
-preferences only (`profile.json`, built by the apply workflow), with a 0–1
-confidence and the fact it relied on. For a choice field the answer must be
-one of the options or it's dropped. Never claims credentials or experience
-the resume doesn't show. Never used for self-identification questions. The
-workflow submits only confident answers and skips the job otherwise.
+Answers from the resume, your saved answers (contact details excluded) and
+your job preferences only (`profile.json`, built by the apply workflow), with
+a 0–1 confidence and the fact it relied on. For a choice field the answer
+must be one of the options or it's dropped. Never claims credentials or
+experience the resume doesn't show. Self-identification answers are mapped
+to the option meaning exactly the same, or the decline option. The workflow
+submits only confident answers.
 
 ## map_question.py — which bank key does a new question mean?
 

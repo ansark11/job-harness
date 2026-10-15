@@ -125,6 +125,18 @@ class ResumeTests(TempDb):
         self.assertEqual(resumes.set_linkedin_name(self.conn, rec["id"], "Jane Doe - Resume.pdf")["linkedin_name"],
                          "Jane Doe - Resume.pdf")
 
+    def test_resume_text_is_stored_without_contact_details(self):
+        bank.set_answer(self.conn, "first_name", "Jane")
+        bank.set_answer(self.conn, "last_name", "Doe")
+        bank.set_answer(self.conn, "phone", "647-779-7348")
+        lines = ["JANE DOE", "Toronto, ON | jane.doe@example.com | (647) 779 7348 | linkedin.com/in/janedoe"] + RESUME_LINES
+        make_docx(self.dir / "r.docx", lines)
+        text = Path(resumes.add(self.conn, self.dir / "r.docx")["text_path"]).read_text()
+        self.assertTrue(text.startswith("[name]\nToronto, ON | [email] | [phone] | [linkedin]"))
+        for leak in ("Jane", "Doe", "jane.doe", "779", "janedoe"):
+            self.assertNotIn(leak.lower(), text.lower())
+        self.assertIn("card-issuing", text)
+
     def test_same_file_twice_returns_existing(self):
         make_docx(self.dir / "a.docx", RESUME_LINES)
         first = resumes.add(self.conn, self.dir / "a.docx")

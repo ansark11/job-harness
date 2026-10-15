@@ -64,9 +64,13 @@ Every CLI entry point writes structured JSON-lines records through
 
 ## Sensitive data
 
-- `services/tracker/data/` holds resumes and the answer bank, including
-  self-identification answers (EEO, visible minority, disability). Never
-  send stored answers to the LLM: only question text goes to the model.
+- `services/tracker/data/` holds resumes and the answer bank. **Contact
+  details never go to the model** (the user's rule): name, email, phone,
+  LinkedIn URL. Resume text is stored with them replaced by placeholders
+  (`resumes.redact_contact`), the apply workflow leaves contact keys out of
+  what it sends, and `llm.scrub_contact` strips email/phone/profile-URL
+  shapes from every prompt. Other saved answers, self-identification
+  included, may go to the model (the user's choice, 2026-10-14).
 - `services/apply-agent/data/browser-profile/` holds a logged-in LinkedIn
   session. The user handles every login; never automate credentials.
 - All `data/`, `.env` and browser profiles are gitignored at the service

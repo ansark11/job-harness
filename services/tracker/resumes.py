@@ -1,5 +1,9 @@
 """Resume versions: a stored copy of each file plus its extracted text.
 
+The extracted text is what the model reads, so it's stored with contact details
+(name, email, phone, LinkedIn URL) replaced by placeholders; forms get those
+from the answer bank on this machine. `resume refresh` re-applies it.
+
 The file is what gets uploaded to applications; the text is what the
 matcher, answer-drafter and form filling read. The text can come from a
 different file (text_source): e.g. upload the PDF but read the Word
@@ -42,6 +46,38 @@ def extract_text(path):
     if len(text) < 200:
         raise TrackerError(f"only {len(text)} characters of text found in {path.name}; "
                            "is it a scanned image? Export a text-based PDF or DOCX")
+    return text
+
+
+CONTACT_KEYS = ("first_name", "last_name", "email", "phone", "linkedin_url", "website_url")
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
+PHONE = re.compile(r"(?<!\w)(\+?1[\s.-]?)?(\(\d{3}\)\s?|\d{3}[\s.-])\d{3}[\s.-]\d{4}(?!\w)")
+LINKEDIN = re.compile(r"(https?://)?([\w-]+\.)?linkedin\.com/in/[\w%-]+/?", re.I)
+
+
+def redact_contact(text, conn=None):
+    """Remove contact details before the text is ever sent to the model: email, phone,
+    LinkedIn URL, and your name and website as saved in the answer bank. City stays
+    (it matters for judging locations)."""
+    text = EMAIL.sub("[email]", text)
+    text = LINKEDIN.sub("[linkedin]", text)
+    text = PHONE.sub("[phone]", text)
+    if conn is not None:
+        rows = conn.execute(f"SELECT key, answer FROM answer_bank WHERE answer IS NOT NULL AND key IN "
+                            f"({', '.join('?' * len(CONTACT_KEYS))})", CONTACT_KEYS).fetchall()
+        saved = {r["key"]: r["answer"].strip() for r in rows if r["answer"].strip()}
+        first, last = saved.get("first_name"), saved.get("last_name")
+        names = [f"{first} {last}"] if first and last else []
+        names += [n for n in (last, first) if n and len(n) > 2]
+        for n in names:
+            text = re.sub(rf"\b{re.escape(n)}\b", "[name]", text, flags=re.I)
+        if saved.get("phone"):
+            digits = re.sub(r"\D", "", saved["phone"])[-10:]
+            if len(digits) == 10:       # the saved number in any format, separators or not
+                text = re.sub(r"(?<!\d)(\+?1[\s.-]?)?" + r"[\s().-]*".join(digits) + r"(?!\d)", "[phone]", text)
+        for k in ("website_url",):
+            if saved.get(k):
+                text = text.replace(saved[k], "[website]")
     return text
 
 
@@ -111,7 +147,7 @@ def add(conn, src, name=None, make_default=False, text_from=None, now=None):
             set_default(conn, existing["id"])
         return {**get(conn, existing["id"]), "already_added": True}
 
-    text = extract_text(text_from or src)
+    text = redact_contact(extract_text(text_from or src), conn)
     rid = uuid.uuid4().hex[:8]
     d = resume_dir()
     d.mkdir(parents=True, exist_ok=True)
@@ -146,7 +182,7 @@ def set_text_source(conn, rid, src):
     src = Path(src).expanduser()
     if not src.is_file():
         raise TrackerError(f"no such file: {src}")
-    text = extract_text(src)
+    text = redact_contact(extract_text(src), conn)
     _store_text_source(conn, rid, src)
     Path(rec["text_path"]).write_text(text)
     return {**get(conn, rid), "characters": len(text), "preview": text[:300]}
@@ -176,7 +212,7 @@ def remove(conn, rid):
 def refresh(conn, rid):
     """Re-extract a stored resume's text (after an extraction fix)."""
     rec = get(conn, rid)
-    text = extract_text(rec["text_source"])
+    text = redact_contact(extract_text(rec["text_source"]), conn)
     Path(rec["text_path"]).write_text(text)
     return {**rec, "characters": len(text), "preview": text[:300]}
 

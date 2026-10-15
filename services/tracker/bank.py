@@ -10,8 +10,8 @@ Resolution order for a question: exact canonical wording -> alias -> unknown
 (goes to the inbox, where answer-drafter can propose a key and the user
 confirms or answers). Keys marked always_ask are never auto-filled.
 
-Sensitive keys (self-identification) are never included in anything sent
-to the model: keys() returns key + wording only, never answers.
+keys() returns key + wording only (for matching new wordings); contact
+details are never sent to the model by any caller.
 """
 
 import json

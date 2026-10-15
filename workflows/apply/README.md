@@ -11,6 +11,13 @@ python3 workflows/apply/run.py status <application id>
 python3 workflows/apply/run.py summary [--hours 24]             # applied, answers chosen for you, skipped
 ```
 
+## What the model sees
+
+Your resume text and saved answers, **minus contact details**: name, email,
+phone and LinkedIn URL are replaced with placeholders in the stored resume
+text, left out of the saved answers it gets, and scrubbed from every prompt
+as a last check. Forms get those fields from the answer bank on your machine.
+
 ## Easy Apply is hands-off
 
 Easy Apply never waits for you. Each unknown field is resolved without asking,
@@ -20,8 +27,9 @@ and a job is **skipped (and you're notified) rather than answered with a guess**
 |---|---|
 | New wording of a question you've answered | matched to your saved answer when the suggestion is ≥ 85% confident, and remembered |
 | Required long-form question | drafted from your resume and used as-is |
-| Screening question you've never answered | answered by the model from your resume, non-sensitive saved answers and job preferences, if ≥ 80% confident; otherwise **skip the job** |
-| Self-identification question not in your answers | "decline to answer" (the form's own decline option); never a guess; skip the job if the form has none |
+| Screening question you've never answered | answered by the model from your resume, saved answers and job preferences, if ≥ 80% confident; otherwise **skip the job** |
+| Saved answer worded differently from the options | the model picks the option meaning the same as your saved answer; otherwise skip the job |
+| Self-identification question | your saved answer, mapped to the form's equivalent option; nothing equivalent, or never answered: the form's "prefer not to say" (skip only if it has none) |
 | Optional question nobody's answered | left blank (and queued in the inbox for next time) |
 | Required upload other than the resume | skip the job |
 

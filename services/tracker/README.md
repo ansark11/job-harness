@@ -74,8 +74,9 @@ tracker.py inbox answer 4 --answer "Yes"                  # a genuinely new ques
   expectations (CAD and USD), US EEO and Canadian employment equity
   self-identification, each with "prefer not to say" options.
 - `--always-ask` keeps a key from ever being auto-filled (e.g. salary).
-- **Self-identification answers never leave this machine:** `bank keys`
-  (what the model sees) has no answers, and answers are masked in the run log.
+- **Contact details never go to the model:** the stored resume text has your
+  name, email, phone and LinkedIn URL replaced with placeholders, and answers
+  are masked in the run log.
 
 ## Approved answers
 

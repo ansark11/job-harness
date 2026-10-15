@@ -45,6 +45,12 @@ COVER = {"key": "cover letter", "label": "Cover letter", "type": "textarea", "re
 FORM = [[PHONE], [WHY, GENDER, SPONSOR, LICENSE, HOBBY, COVER]]
 
 
+def fits(value, options):
+    """Like the agent: an exact option, or a decline-to-answer value when the form offers one."""
+    return value in options or (bool(wf.DECLINE_OPTION.search(value)) and
+                                any(wf.DECLINE_OPTION.search(o) for o in options))
+
+
 class Services:
     """tracker: the real CLI in-process. apply-agent: walks FORM. drafter/mapper: canned."""
 
@@ -73,7 +79,7 @@ class Services:
         if tool == "mapper":
             self.mapper_inputs.append(Path(args[args.index("--keys") + 1]).read_text())
             q = args[args.index("--question") + 1]
-            key = "phone" if "phone" in q.lower() else None
+            key = "phone" if "phone" in q.lower() else "gender_ca" if "gender identity" in q.lower() else None
             return {"key": key, "confidence": 0.9 if key else 0.0, "reason": "same fact" if key else "new"}
         if tool == "answerer":
             q = args[args.index("--question") + 1]
@@ -94,8 +100,12 @@ class Services:
             unknown = False
             for f in page:
                 outcome = "filled" if f["key"] in answers else "skipped" if f["key"] in skip else "unknown"
+                error = None
+                if outcome == "filled" and f.get("options") and not fits(answers[f["key"]], f["options"]):
+                    outcome, error = "unknown", f"{answers[f['key']]!r} matches none of {f['options']}"
                 unknown |= outcome == "unknown"
-                seen.append({**f, "page": page_no, "outcome": outcome, "source": "packet" if outcome == "filled" else None})
+                seen.append({**f, "page": page_no, "outcome": outcome, "error": error,
+                             "source": "packet" if outcome == "filled" else None})
             if unknown:
                 return {"status": "needs_input", "fields": seen, "unknown": [], "screenshots": []}
         if "--dry-run" in args or args[args.index("--mode") + 1] != "submit":
@@ -332,9 +342,9 @@ class HandsOffTests(FlowBase):
         self.assertEqual(self.notes[-1][0], "Applied")
         # The auto-match is remembered: the next form with this wording needs no model call.
         self.assertEqual(self.svc("tracker", ["bank", "resolve", PHONE["label"]])["via"], "alias")
-        # Self-identification answers never reach the model.
-        self.assertNotIn("I don't wish to answer", self.svc.answerer_inputs[0])
-        self.assertIn("416-555-0100", self.svc.answerer_inputs[0])
+        # Contact details never reach the model; other saved answers (self-ID included) may.
+        self.assertNotIn("416-555-0100", self.svc.answerer_inputs[0])
+        self.assertIn("I don't wish to answer", self.svc.answerer_inputs[0])
         # Drafts it used on its own don't become "your voice" examples.
         self.assertEqual(self.svc("tracker", ["answers", "list"])["answers"], [])
 
@@ -355,6 +365,29 @@ class HandsOffTests(FlowBase):
         self.assertEqual(out["status"], "submitted")
         self.assertEqual(self.svc.submitted[trans["key"]], "I don't wish to answer")
         self.assertEqual(self.svc.answerer_inputs, [])                         # no model call for it
+
+    GENDER_ID = {"key": "how do you identify gender identity", "label": "How do you identify? (Gender identity)",
+                 "type": "radio", "required": True,
+                 "options": ["Cisgender female", "Cisgender male", "Non-Binary", "I prefer not to say"]}
+
+    def test_self_id_wording_mismatch_is_mapped_by_the_model(self):
+        self.svc("tracker", ["bank", "set", "gender_ca", "Woman"])
+        self.svc.form = [[PHONE, self.GENDER_ID]]
+        self.svc.model_answers = {"Gender identity": {"answer": "Cisgender female", "confidence": 0.9,
+                                                      "basis": "Saved answer Woman."}}
+        code, out = self.wf("start", "1")
+        self.assertEqual(out["status"], "submitted")
+        self.assertEqual(self.svc.submitted[self.GENDER_ID["key"]], "Cisgender female")
+
+    def test_self_id_with_no_equivalent_is_declined_not_skipped(self):
+        self.svc("tracker", ["bank", "set", "gender_ca", "Man"])
+        self.svc.form = [[PHONE, self.GENDER_ID]]
+        self.svc.model_answers = {"Gender identity": {"answer": None, "confidence": 0.0, "basis": "No equivalent."}}
+        code, out = self.wf("start", "1")
+        self.assertEqual(out["status"], "submitted")
+        self.assertEqual(self.svc.submitted[self.GENDER_ID["key"]], "I don't wish to answer")
+        self.assertIn({"question": self.GENDER_ID["label"], "answer": "I don't wish to answer",
+                       "how": "declined to answer"}, out["chosen_for_you"])
 
     def test_resume_problem_skips_and_never_reaches_the_model(self):
         cards = {"key": "choose a resume", "label": "Choose a resume", "type": "radio", "required": True,

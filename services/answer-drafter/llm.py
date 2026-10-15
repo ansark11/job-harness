@@ -62,10 +62,20 @@ def _urllib_post(payload):
 
 sleep = time.sleep      # tests replace this
 
+# Contact details never go to the model (the user's rule). Callers already send text with
+# them removed; this is the safety net for anything shaped like an email, phone or profile URL.
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
+_PHONE = re.compile(r"(?<!\w)(\+?1[\s.-]?)?(\(\d{3}\)\s?|\d{3}[\s.-])\d{3}[\s.-]\d{4}(?!\w)")
+_LINKEDIN = re.compile(r"(https?://)?([\w-]+\.)?linkedin\.com/in/[\w%-]+/?", re.I)
+
+
+def scrub_contact(text):
+    return _PHONE.sub("[phone]", _LINKEDIN.sub("[linkedin]", _EMAIL.sub("[email]", text)))
+
 
 def call_json(prompt, schema_name, schema, post=None):
     """One model call constrained to `schema`. Returns (parsed dict, call details for the run log)."""
-    body = {"model": MODEL, "input": prompt,
+    body = {"model": MODEL, "input": scrub_contact(prompt),
             "text": {"format": {"type": "json_schema", "name": schema_name, "schema": schema, "strict": True}}}
     send = post or _urllib_post
     for attempt in range(len(RETRY_WAITS) + 1):

@@ -56,6 +56,10 @@ DECLINE = "I don't wish to answer"     # the agent matches it to the form's own 
 SELF_ID = re.compile(r"gender|\brace\b|ethnic|veteran|disabilit|hispanic|latin[oa]|visible minorit|indigenous|"
                      r"aboriginal|lgbt|sexual orientation|pronoun|transgender", re.I)
 AUTO_SOURCES = ("model", "draft_auto", "decline")
+# Never sent to the model (the user's rule): forms get these from the bank on this machine.
+CONTACT_KEYS = ("first_name", "last_name", "email", "phone", "linkedin_url", "website_url")
+DECLINE_OPTION = re.compile(r"\b(decline|prefer not|don.?t wish|do not wish|not wish to|rather not|choose not|"
+                            r"do not want|don.?t want|not to (say|answer|disclose|identify))", re.I)
 
 
 class StepError(Exception):
@@ -212,11 +216,8 @@ class Applier:
     def profile_item(self, base, field, app, hands=False):
         self_id = bool(SELF_ID.search(base["label"]))
         if field.get("error"):        # the bank's answer fit none of this form's options
-            if hands:
-                if self_id:
-                    self.skip_reasons.append(f"self-identification question with no decline option ({base['label']})")
-                    return {**base, "state": "needs_answer", "meta": {"note": field["error"]}}
-                return self.model_item(base, field, app, hint=field["error"])
+            if hands:                 # the model maps your answer to the form's equivalent option
+                return self.model_item(base, field, app, hint=field["error"], self_id=self_id)
             return {**base, "state": "needs_answer", "meta": {"note": field["error"], "fill_error": True}}
         r = self.tracker("bank", "resolve", base["label"])
         if r["status"] == "answered":
@@ -267,10 +268,11 @@ class Applier:
         return {**base, "state": "approved", "value": DECLINE, "source": "decline"}
 
     def profile(self):
-        """What the model may use to answer for you: non-sensitive saved answers and job preferences."""
+        """What the model may use to answer for you: your saved answers except contact details, and
+        your job preferences."""
         entries = self.tracker("bank", "list")["entries"]
         answers = [{"question": e["question"], "answer": e["answer"]} for e in entries
-                   if e["answer"] and not e["sensitive"]]
+                   if e["answer"] and e["key"] not in CONTACT_KEYS]
         prefs = {}
         try:
             search = json.loads(CRITERIA.read_text()).get("search", {})
@@ -279,22 +281,28 @@ class Applier:
             pass
         return {"answers": answers, "preferences": prefs}
 
-    def model_item(self, base, field, app, hint=None):
-        """Hands-off: the model answers from your profile; not confident enough means skip the job."""
+    def model_item(self, base, field, app, hint=None, self_id=False):
+        """Hands-off: the model answers from your profile; not confident enough means skip the job.
+        A self-identification question it can't map confidently gets the form's decline option."""
         question = base["label"] + (f" (your saved answer didn't fit the options: {hint})" if hint else "")
         args = ["--question", question, "--job", self._write("job.json", app["job"]),
                 "--resume", app["resume"]["text_path"], "--profile", self._write("profile.json", self.profile()),
                 "--field-type", field["type"]]
         if field.get("options"):
             args += ["--options", json.dumps(field["options"])]
+        can_decline = self_id and any(DECLINE_OPTION.search(o or "") for o in (field.get("options") or []))
         try:
             a = self.call("answerer", args)
         except StepError as e:
+            if can_decline:
+                return self.decline_item(base)
             self.skip_reasons.append(f"couldn't get an answer to {base['label']!r}: {e}")
             return {**base, "state": "needs_answer", "meta": {"note": str(e)}}
         meta = {"confidence": a["confidence"], "basis": a["basis"]}
         if a["answer"] is not None and a["confidence"] >= AUTO_ANSWER_MIN:
             return {**base, "state": "approved", "value": a["answer"], "source": "model", "meta": meta}
+        if can_decline:
+            return self.decline_item(base)
         self.skip_reasons.append(f"not confident answering {base['label']!r} ({a['confidence']:.0%}: {a['basis']})")
         return {**base, "state": "needs_answer", "meta": {**meta, "note": "not confident enough to answer for you"}}
 
