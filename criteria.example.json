@@ -92,6 +92,9 @@
       "Personal Care Product Manufacturing",
       "Food and Beverage Retail",
       "Tobacco Manufacturing"
+    ],
+    "needs_sponsorship_in": [
+      "US"
     ]
   }
 }

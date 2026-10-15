@@ -23,7 +23,8 @@ def facts(**over):
     base = {"work_mode": "hybrid", "employment_type": "full_time", "contract_months": None,
             "seniority": "senior", "pay_ranges": [], "industry": "fintech_payments",
             "industry_reason": "Payments processor.", "role_domain": "fintech_payments",
-            "role_type": "product_management", "role_type_reason": "Owns the roadmap.", "fit_score": 80, "fit_reasons": ["a"], "concerns": []}
+            "role_type": "product_management", "role_type_reason": "Owns the roadmap.",
+            "sponsorship": "not_stated", "fit_score": 80, "fit_reasons": ["a"], "concerns": []}
     return {**base, **over}
 
 
@@ -144,6 +145,12 @@ class DecideTests(unittest.TestCase):
         self.assertEqual(reasons, [])
         self.assertIn("couldn't confirm it's a product management role", flags)
         self.assertTrue(any("no description" in f for f in flags))
+
+    def test_us_role_that_wont_sponsor_is_rejected_others_kept(self):
+        us = posting(location="Austin, TX")
+        self.assertIn("won't sponsor work visas", self.decide(us, facts(sponsorship="not_offered"))[0][0])
+        self.assertEqual(self.decide(us, facts(sponsorship="not_stated"))[0], [])          # silent: kept
+        self.assertEqual(self.decide(posting(), facts(sponsorship="not_offered"))[0], [])   # Toronto: no visa needed
 
     def test_untitled_seniority_uses_model_level(self):
         p = posting(title="Product Manager, Payments")

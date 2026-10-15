@@ -18,7 +18,7 @@ SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["work_mode", "employment_type", "contract_months", "seniority", "pay_ranges",
-                 "industry", "industry_reason", "role_domain", "role_type", "role_type_reason",
+                 "industry", "industry_reason", "role_domain", "role_type", "role_type_reason", "sponsorship",
                  "fit_score", "fit_reasons", "concerns"],
     "properties": {
         "work_mode": {"type": "string", "enum": ["remote", "hybrid", "onsite", "unknown"]},
@@ -40,6 +40,7 @@ SCHEMA = {
         "role_domain": {"type": "string", "enum": DOMAINS},
         "role_type": {"type": "string", "enum": ROLE_TYPES},
         "role_type_reason": {"type": "string"},
+        "sponsorship": {"type": "string", "enum": ["offered", "not_offered", "not_stated"]},
         "fit_score": {"type": "integer"},
         "fit_reasons": {"type": "array", "items": {"type": "string"}},
         "concerns": {"type": "array", "items": {"type": "string"}},
@@ -79,6 +80,9 @@ Facts (use "unknown" or null when the posting doesn't say; never guess):
   other = anything else (analyst, engineering, marketing, sales, operations);
   unclear = the posting says too little about the job's responsibilities to tell.
   role_type_reason: one short sentence.
+- sponsorship: does the posting say whether it sponsors work visas? offered (it will sponsor,
+  or mentions visa support), not_offered (e.g. "we are unable to sponsor", "must be authorized to
+  work without sponsorship now or in the future"), not_stated (it doesn't say).
 
 Fit:
 - fit_score: 0-100, how well the resume matches this role's requirements and domain.

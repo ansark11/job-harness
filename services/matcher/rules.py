@@ -132,6 +132,10 @@ def decide(posting, facts, cfg):
     elif where not in cfg.get("countries", ["CA", "US"]):
         reasons.append(f"located in {where}")
 
+    # Visa sponsorship: only a posting that says outright it won't sponsor is rejected.
+    if where in cfg.get("needs_sponsorship_in", []) and facts.get("sponsorship") == "not_offered":
+        reasons.append(f"says it won't sponsor work visas, and you need sponsorship in the {where}")
+
     # Employment type.
     etype = facts["employment_type"]
     if etype == "part_time":

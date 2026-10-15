@@ -18,6 +18,8 @@ The model proposes, code decides:
    Cached in `data/extractions.json` per posting + resume + prompt version.
 3. **decide** (`rules.py`):
    - Canada: Toronto/Vancouver metros (`canada_metros`), or anywhere if remote. US: anywhere.
+   - A posting in a country listed in `needs_sponsorship_in` (US) that says
+     outright it won't sponsor work visas is rejected; one that doesn't say is kept.
    - On-site rejected; contracts under `contract_min_months` rejected.
    - Pay (only if listed): the range for the posting's city, else the highest
      band, annualized and converted with `fx_to_cad`; rejected below
