@@ -101,7 +101,8 @@ def _entry(row):
     return {"key": row["key"], "question": row["question"], "group": row["grp"],
             "options": json.loads(row["options"]) if row["options"] else None,
             "jurisdiction": row["jurisdiction"], "sensitive": bool(row["sensitive"]),
-            "always_ask": bool(row["always_ask"]), "answer": row["answer"], "custom": bool(row["custom"])}
+            "always_ask": bool(row["always_ask"]), "answer": row["answer"], "custom": bool(row["custom"]),
+            "alternatives": json.loads(row["alternatives"]) if row["alternatives"] else []}
 
 
 def list_entries(conn, group=None, unanswered=False):
@@ -123,11 +124,16 @@ def get(conn, key):
     return _entry(row)
 
 
-def set_answer(conn, key, answer, always_ask=None, now=None):
+def set_answer(conn, key, answer, always_ask=None, now=None, alternatives=None):
+    """alternatives: other acceptable wordings of the same answer; None leaves them as they are."""
     get(conn, key)
     with conn:
         conn.execute("UPDATE answer_bank SET answer = ?, updated_at = ? WHERE key = ?",
                      (answer, _iso(now or utcnow()), key))
+        if alternatives is not None:
+            alts = [a for a in dict.fromkeys(a.strip() for a in alternatives) if a and a != answer]
+            conn.execute("UPDATE answer_bank SET alternatives = ? WHERE key = ?",
+                         (json.dumps(alts) if alts else None, key))
         if always_ask is not None:
             conn.execute("UPDATE answer_bank SET always_ask = ? WHERE key = ?", (int(always_ask), key))
     return get(conn, key)
@@ -160,7 +166,7 @@ def resolve(conn, question):
         return {"status": "always_ask", **base}
     if e["answer"] is None:
         return {"status": "unanswered", **base}
-    return {"status": "answered", "answer": e["answer"], **base}
+    return {"status": "answered", "answer": e["answer"], "alternatives": e["alternatives"], **base}
 
 
 def add_alias(conn, question, key, now=None):

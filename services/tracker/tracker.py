@@ -20,7 +20,7 @@ Resumes
 Answer bank (reusable answers to application questions)
     tracker.py bank onboard                     # interactive: answer the standard questions once
     tracker.py bank list [--group G] [--unanswered]
-    tracker.py bank show <key> | set <key> <answer> [--always-ask | --auto]
+    tracker.py bank show <key> | set <key> <answer> [--also <other wording> ...] [--always-ask | --auto]
     tracker.py bank keys                        # keys + wording only (safe to give the model)
     tracker.py bank resolve "<question>"
 
@@ -129,6 +129,7 @@ def build_parser():
     r = s.add_parser("set")
     r.add_argument("key")
     r.add_argument("answer")
+    r.add_argument("--also", action="append", help="another acceptable wording; the form's own option wins")
     g = r.add_mutually_exclusive_group()
     g.add_argument("--always-ask", dest="always_ask", action="store_true", default=None)
     g.add_argument("--auto", dest="always_ask", action="store_false")
@@ -326,7 +327,7 @@ def cmd_bank(conn, args, run):
     if args.sub == "show":
         return bank.get(conn, args.key)
     if args.sub == "set":
-        entry = bank.set_answer(conn, args.key, args.answer, args.always_ask)
+        entry = bank.set_answer(conn, args.key, args.answer, args.always_ask, alternatives=args.also)
         run.event("bank_set", key=args.key, sensitive=entry["sensitive"])     # never the answer itself
         return entry
     if args.sub == "keys":
@@ -406,7 +407,7 @@ def loggable_argv(argv):
     if out[:2] == ["bank", "set"] and len(out) > 3:
         out[3] = "[answer]"
     for i, a in enumerate(out[:-1]):
-        if a in ("--answer", "--value"):
+        if a in ("--answer", "--value", "--also"):
             out[i + 1] = "[answer]"
     return out
 

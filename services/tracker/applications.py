@@ -195,7 +195,8 @@ def packet(conn, app_id):
     answers, skip = {}, []
     for it in app["items"]:
         if it["state"] in ("filled", "approved"):
-            answers[it["key"]] = it["value"]
+            any_of = (it.get("meta") or {}).get("any_of")
+            answers[it["key"]] = {"any_of": any_of} if any_of else it["value"]
         elif it["state"] == "skipped":
             skip.append(it["key"])
     ext = app["resume"]["file_path"].rsplit(".", 1)[-1]

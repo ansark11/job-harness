@@ -196,6 +196,11 @@ MIGRATIONS = [
     """
     ALTER TABLE resumes ADD COLUMN linkedin_name TEXT;
     """,
+    # 9: a saved answer can list other acceptable wordings ("Man", "Male", "Cisgender male");
+    #    the agent uses whichever one a form offers
+    """
+    ALTER TABLE answer_bank ADD COLUMN alternatives TEXT;
+    """,
 ]
 
 

@@ -170,6 +170,13 @@ class BankTests(TempDb):
         bank.set_answer(self.conn, "salary_expectation_usd", "Open", always_ask=True)
         self.assertEqual(bank.resolve(self.conn, "What are your salary expectations (USD)?")["status"], "always_ask")
 
+    def test_alternative_wordings(self):
+        e = bank.set_answer(self.conn, "gender_ca", "Man", alternatives=["Male", "Cisgender male", "Man"])
+        self.assertEqual(e["alternatives"], ["Male", "Cisgender male"])
+        self.assertEqual(bank.resolve(self.conn, "Gender identity")["alternatives"], ["Male", "Cisgender male"])
+        bank.set_answer(self.conn, "gender_ca", "Man")                        # None leaves them alone
+        self.assertEqual(bank.get(self.conn, "gender_ca")["alternatives"], ["Male", "Cisgender male"])
+
     def test_keys_never_include_answers(self):
         bank.set_answer(self.conn, "race_us", "Asian")
         dumped = json.dumps(bank.keys(self.conn))

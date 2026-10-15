@@ -301,6 +301,16 @@ def fill_field(page, field, value, pause=0.0, root=None):
     `root` is the container the field was read from, for re-reading after a redraw."""
     t = field["type"]
     sel = f'[data-jh-id="{field["id"]}"]'
+    if isinstance(value, dict) and "any_of" in value:
+        # Several acceptable wordings: use the first the form offers (text fields take the first).
+        choices = value["any_of"]
+        if t in ("radio", "select", "button_choice", "checkbox_group") and field.get("options"):
+            fit = next((v for v in choices if match_option(v, field["options"])), None)
+            if fit is None:
+                raise FillError(f"none of {choices} matches {field['options']}")
+            value = fit
+        else:
+            value = choices[0]
     if t in ("radio", "checkbox_group"):
         wanted = value if isinstance(value, list) else [value] if t == "radio" else \
             [v.strip() for v in str(value).split(",") if v.strip()]

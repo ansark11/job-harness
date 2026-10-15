@@ -222,7 +222,8 @@ class Applier:
             return {**base, "state": "needs_answer", "meta": {"note": field["error"], "fill_error": True}}
         r = self.tracker("bank", "resolve", base["label"])
         if r["status"] == "answered":
-            return {**base, "state": "filled", "value": r["answer"], "source": "bank", "bank_key": r["key"]}
+            return {**base, "state": "filled", "value": r["answer"], "source": "bank", "bank_key": r["key"],
+                    **any_of(r)}
         if r["status"] in ("always_ask", "unanswered"):
             if hands:
                 return self.decline_item(base) if self_id or r.get("sensitive") else self.model_item(base, field, app)
@@ -261,8 +262,9 @@ class Applier:
             return None
         self.tracker("inbox", "resolve", str(inbox_id), "--key", key)
         self.run.event("auto_mapped", application_id=self.app_id, question=base["label"], key=key, confidence=conf)
+        alts = any_of(entry).get("meta", {})
         return {**base, "state": "filled", "value": entry["answer"], "source": "bank", "bank_key": key,
-                "inbox_id": inbox_id, "meta": {"auto_mapped": key, "confidence": conf}}
+                "inbox_id": inbox_id, "meta": {"auto_mapped": key, "confidence": conf, **alts}}
 
     @staticmethod
     def decline_item(base):
@@ -272,8 +274,10 @@ class Applier:
         """What the model may use to answer for you: your saved answers except contact details, and
         your job preferences."""
         entries = self.tracker("bank", "list")["entries"]
-        answers = [{"question": e["question"], "answer": e["answer"]} for e in entries
-                   if e["answer"] and e["key"] not in CONTACT_KEYS]
+        answers = [{"question": e["question"],
+                    "answer": e["answer"] + (f" (also acceptable: {', '.join(e['alternatives'])})"
+                                             if e.get("alternatives") else "")}
+                   for e in entries if e["answer"] and e["key"] not in CONTACT_KEYS]
         prefs = {}
         try:
             search = json.loads(CRITERIA.read_text()).get("search", {})
@@ -332,7 +336,8 @@ class Applier:
                 if r["status"] == "answered":
                     updates.append({**{k: it[k] for k in ("key", "label", "field_type", "options", "required",
                                                           "page", "kind", "inbox_id")},
-                                    "state": "filled", "value": r["answer"], "source": "bank", "bank_key": r["key"]})
+                                    "state": "filled", "value": r["answer"], "source": "bank", "bank_key": r["key"],
+                                    **any_of(r)})
         if updates:
             self.tracker("application", "items", self.app_id, "--set", self._write("items.json", updates))
 
@@ -476,6 +481,12 @@ class Applier:
         if needs:
             out["then"] = f"python3 workflows/apply/run.py continue {self.app_id}"
         return out
+
+
+def any_of(entry):
+    """Item meta for a saved answer with other acceptable wordings."""
+    alts = entry.get("alternatives") or []
+    return {"meta": {"any_of": [entry["answer"], *alts]}} if alts else {}
 
 
 def chosen_for_you(items):

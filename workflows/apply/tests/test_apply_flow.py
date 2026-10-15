@@ -398,6 +398,24 @@ class HandsOffTests(FlowBase):
         self.assertIn({"question": self.GENDER_ID["label"], "answer": "I don't wish to answer",
                        "how": "declined to answer"}, out["chosen_for_you"])
 
+    def test_saved_alternatives_reach_the_agent(self):
+        self.svc("tracker", ["bank", "set", "gender_ca", "Man", "--also", "Male", "--also", "Cisgender male"])
+        self.svc.form = [[PHONE, self.GENDER_ID]]
+        captured = []
+        real = self.svc.agent
+
+        def agent(packet, args):
+            captured.append(packet["answers"].get(self.GENDER_ID["key"]))
+            gender = packet["answers"].get(self.GENDER_ID["key"])
+            if isinstance(gender, dict):                     # the real agent picks the form's wording
+                packet["answers"][self.GENDER_ID["key"]] = "Cisgender male"
+            return real(packet, args)
+        self.svc.agent = agent
+        code, out = self.wf("start", "1")
+        self.assertEqual(out["status"], "submitted")
+        self.assertIn({"any_of": ["Man", "Male", "Cisgender male"]}, captured)
+        self.assertEqual(self.svc.answerer_inputs, [])         # no model needed
+
     def test_resume_problem_skips_and_never_reaches_the_model(self):
         cards = {"key": "choose a resume", "label": "Choose a resume", "type": "radio", "required": True,
                  "options": ["W Jane Doe - Resume.docx"], "resume": True, "page": 2, "outcome": "unknown",
