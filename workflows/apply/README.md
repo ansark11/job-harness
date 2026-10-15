@@ -29,7 +29,7 @@ and a job is **skipped (and you're notified) rather than answered with a guess**
 | Required long-form question | drafted from your resume and used as-is |
 | Screening question you've never answered | answered by the model from your resume, saved answers and job preferences, if ≥ 80% confident; otherwise **skip the job** |
 | Saved answer worded differently from the options | the model picks the option meaning the same as your saved answer; otherwise skip the job |
-| Self-identification question | your saved answer, mapped to the form's equivalent option; nothing equivalent, or never answered: the form's "prefer not to say" (skip only if it has none) |
+| Self-identification question | your saved answer, best-matched to the form's closest option if the model is ≥ 90% sure; otherwise, or if never answered: the form's "prefer not to say" (skip only if it has none) |
 | Optional question nobody's answered | left blank (and queued in the inbox for next time) |
 | Required upload other than the resume | skip the job |
 

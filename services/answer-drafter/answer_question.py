@@ -44,9 +44,11 @@ Rules:
 - Willingness questions (relocation, onsite days, travel, start date): use the saved answers and
   preferences. If they don't settle it, give your best answer with low confidence.
 - Self-identification questions (gender, ethnicity, disability, veteran status...): choose the
-  option that means the same as the candidate's saved answer. Don't add anything they didn't say
-  (e.g. "Man" is not "Cisgender male"); if no option means the same, choose the option that
-  declines to answer, with high confidence. Never infer these from the resume.
+  option closest to the candidate's saved answer (e.g. saved "Man" -> "Cisgender male" or "Male";
+  saved "I am not a protected veteran" -> "No, I am not a veteran"). Only if no option is
+  reasonably close, choose the option that declines to answer. Never infer these from the resume.
+  Confidence here = how close the chosen option is to the saved answer: 0.95+ same meaning in
+  other words, 0.85-0.95 a close equivalent that adds or drops a small detail, below 0.8 loose.
 - {choice_rule}
 - confidence: 0 to 1, how sure you are this is the answer the candidate would give. Use 0.9+ only
   when the facts state it directly; 0.5 or less when you're inferring.

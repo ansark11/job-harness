@@ -373,11 +373,20 @@ class HandsOffTests(FlowBase):
     def test_self_id_wording_mismatch_is_mapped_by_the_model(self):
         self.svc("tracker", ["bank", "set", "gender_ca", "Woman"])
         self.svc.form = [[PHONE, self.GENDER_ID]]
-        self.svc.model_answers = {"Gender identity": {"answer": "Cisgender female", "confidence": 0.9,
+        self.svc.model_answers = {"Gender identity": {"answer": "Cisgender female", "confidence": 0.93,
                                                       "basis": "Saved answer Woman."}}
         code, out = self.wf("start", "1")
         self.assertEqual(out["status"], "submitted")
         self.assertEqual(self.svc.submitted[self.GENDER_ID["key"]], "Cisgender female")
+
+    def test_self_id_best_match_below_90_is_declined(self):
+        self.svc("tracker", ["bank", "set", "gender_ca", "Man"])
+        self.svc.form = [[PHONE, self.GENDER_ID]]
+        self.svc.model_answers = {"Gender identity": {"answer": "Cisgender male", "confidence": 0.86,
+                                                      "basis": "Close, adds cisgender."}}
+        code, out = self.wf("start", "1")
+        self.assertEqual(out["status"], "submitted")
+        self.assertEqual(self.svc.submitted[self.GENDER_ID["key"]], "I don't wish to answer")
 
     def test_self_id_with_no_equivalent_is_declined_not_skipped(self):
         self.svc("tracker", ["bank", "set", "gender_ca", "Man"])

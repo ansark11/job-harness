@@ -52,6 +52,7 @@ CRITERIA = HERE.parents[1] / "criteria.json"
 # Hands-off Easy Apply (the user's choice): resolve everything without asking, but never guess.
 AUTO_MAP_MIN = 0.85       # accept a suggested bank key for a new wording at this confidence
 AUTO_ANSWER_MIN = 0.80    # submit a model-chosen screening answer at this confidence; below it, skip the job
+SELF_ID_MATCH_MIN = 0.90  # self-ID: best-match option at this confidence; below it, the form's decline option
 DECLINE = "I don't wish to answer"     # the agent matches it to the form's own decline option
 SELF_ID = re.compile(r"gender|\brace\b|ethnic|veteran|disabilit|hispanic|latin[oa]|visible minorit|indigenous|"
                      r"aboriginal|lgbt|sexual orientation|pronoun|transgender", re.I)
@@ -299,7 +300,8 @@ class Applier:
             self.skip_reasons.append(f"couldn't get an answer to {base['label']!r}: {e}")
             return {**base, "state": "needs_answer", "meta": {"note": str(e)}}
         meta = {"confidence": a["confidence"], "basis": a["basis"]}
-        if a["answer"] is not None and a["confidence"] >= AUTO_ANSWER_MIN:
+        bar = SELF_ID_MATCH_MIN if self_id else AUTO_ANSWER_MIN
+        if a["answer"] is not None and a["confidence"] >= bar:
             return {**base, "state": "approved", "value": a["answer"], "source": "model", "meta": meta}
         if can_decline:
             return self.decline_item(base)
