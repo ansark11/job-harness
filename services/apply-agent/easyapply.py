@@ -28,6 +28,7 @@ SUBMIT = re.compile(r"^submit( application)?$", re.I)
 EASY_APPLY = re.compile(r"easy apply", re.I)
 APPLIED = re.compile(r"^Applied \d+ \w+ ago|^Application submitted", re.I)
 SENT = re.compile(r"application (was )?sent|your application was sent", re.I)
+FOLLOW = re.compile(r"^follow\b", re.I)          # "Follow Upgrade, Inc. to stay up to date with their page"
 RESUME_EXT = re.compile(r"\.(pdf|docx?)\b", re.I)
 
 
@@ -102,6 +103,7 @@ class Walk:
                     return self.report("needs_input")
                 submit = self._button(SUBMIT)
                 if submit:
+                    self.untick_follow()
                     if self.mode != "submit" or self.dry_run:
                         return self.report("ready", note="every field answered; not submitted "
                                                          f"({'dry run' if self.dry_run else 'fill mode'})")
@@ -194,6 +196,16 @@ class Walk:
             return 1
         cards.update(outcome="filled", source="resume", filled=selected)
         return 0
+
+    def untick_follow(self):
+        """The user doesn't want to follow every company applied to; LinkedIn ticks it by default."""
+        for f in self.fields:
+            if f["type"] == "checkbox" and FOLLOW.search(f["label"]) and f.get("value"):
+                try:
+                    forms.set_choice(self.page, f'[data-jh-id="{f["id"]}"]', False)
+                    f.update(outcome="unticked", source="preference", filled=False)
+                except forms.FillError as e:
+                    f.update(error=f"couldn't untick: {e}")
 
     def page_errors(self):
         loc = self.page.locator(DIALOG).first.locator("[role=alert], .artdeco-inline-feedback--error")

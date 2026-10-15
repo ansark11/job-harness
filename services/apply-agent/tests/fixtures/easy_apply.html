@@ -78,6 +78,8 @@
   <section data-step="4" hidden>
     <h3>Review your application</h3>
     <p>Check your answers before submitting.</p>
+    <input type="checkbox" id="follow" checked class="offscreen">
+    <label for="follow">Follow Test Co to stay up to date with their page</label>
   </section>
 
   <div id="sent" hidden><h2>Your application was sent to Test Co</h2></div>
@@ -149,6 +151,7 @@
       phone: $('phone').value, resume: chosenResume,
       sponsor: (document.querySelector('input[name=sponsor]:checked') || {}).value,
       hybrid: (document.querySelector('input[name="radio-group-_r_t_"]:checked') || {}).id || null,
+      follow: $('follow').checked,
       years: $('years').value, gender: $('gender').value, why: $('why').value };
     sections().forEach(s => s.hidden = true);
     document.querySelector('footer').hidden = true;

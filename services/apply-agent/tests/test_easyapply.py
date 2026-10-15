@@ -133,9 +133,17 @@ class EasyApplyTests(unittest.TestCase):
         sent = self.page.evaluate("window.submitted")
         self.assertEqual(sent, {"phone": "416-555-0100", "resume": "c",
                                 "sponsor": "No",
-                                "hybrid": "hyb-y",
+                                "hybrid": "hyb-y", "follow": False,
                                 "years": "8", "gender": "I don't wish to answer", "why": "I led payouts at a fintech."})
         self.assertNotIn("discarded", self.page.evaluate("window.events"))
+
+    def test_saved_answer_alternatives_use_the_forms_wording(self):
+        r = self.walk(self.packet({**FULL, GENDER: {"any_of": ["Woman", "Female", "Cisgender female"]}},
+                                  skip=[COVER]), mode="submit")
+        self.assertEqual(r["status"], "submitted")
+        self.assertEqual(self.page.evaluate("window.submitted.gender"), "Female")
+        r = self.walk(self.packet({**FULL, GENDER: {"any_of": ["Two-Spirit"]}}, skip=[COVER]))
+        self.assertIn("none of ['Two-Spirit'] matches", next(f for f in r["fields"] if f["key"] == GENDER)["error"])
 
     def test_daily_cap_blocks_submit(self):
         r = self.walk(self.packet(FULL, skip=[COVER]), mode="submit", cap_ok=lambda: False)
