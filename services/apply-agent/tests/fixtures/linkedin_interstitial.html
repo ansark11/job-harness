@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- Stand-in LinkedIn job page whose Apply first asks "Continue to apply?" in a dialog. -->
+<html><head><meta charset="utf-8"><title>Senior PM - Portal Co</title></head>
+<body>
+<h1>Senior Product Manager</h1>
+<button id="apply" aria-label="Apply to Senior Product Manager on company website">Apply</button>
+<div role="dialog" id="dlg" hidden aria-label="Leaving LinkedIn">
+  <p>You're leaving LinkedIn to apply on the company's site.</p>
+  <button id="cancel">Cancel</button><button id="go">Continue</button>
+</div>
+<script>
+  document.getElementById('apply').onclick = () => { document.getElementById('dlg').hidden = false; };
+  document.getElementById('go').onclick = () =>
+    window.open(new URL('careers_embed.html', location.href).href, '_blank');
+</script>
+</body></html>

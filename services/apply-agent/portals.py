@@ -61,8 +61,28 @@ def form_url(url):
     return urlunsplit((p.scheme, p.netloc, path, p.query, ""))
 
 
+LINKEDIN = re.compile(r"(^|\.)linkedin\.com$")
+# LinkedIn sometimes asks before sending you off-site ("Continue to apply", share-your-profile prompts).
+CONTINUE = re.compile(r"^\s*(continue( to apply)?|apply( on company (site|website))?|yes|ok)\b", re.I)
+# Overlays that sit on top of a form: cookie banners, newsletter and chat prompts, sign-up nags.
+OVERLAY = ("#onetrust-banner-sdk, #onetrust-consent-sdk, #CybotCookiebotDialog, #truste-consent-track, "
+           "[id*=cookie i], [class*=cookie i], [id*=consent i], [class*=consent i], [aria-modal=true], "
+           "[role=dialog], [role=alertdialog]")
+ACCEPT = re.compile(r"^\s*(accept( all)?( cookies)?|allow( all)?( cookies)?|i agree|agree|got it|ok(ay)?|"
+                    r"i understand|understood|reject all|decline( all)?|no,? thanks|not now|maybe later|"
+                    r"close|dismiss|×|x)\s*$", re.I)
+
+
+def _left_linkedin(url, start):
+    """True once a URL is somewhere other than LinkedIn and other than where we started."""
+    if not url or url == start or url.startswith("about:"):
+        return False
+    return not LINKEDIN.search((urlsplit(url).hostname or "").lower())
+
+
 def resolve_apply_url(page, job_url, timeout=15000):
-    """Click LinkedIn's (offsite) Apply button and return where it leads. None if there's no such button."""
+    """Click LinkedIn's (offsite) Apply button and return where it leads.
+    None if there's no such button or it never leaves LinkedIn (never a LinkedIn URL)."""
     page.goto(job_url, wait_until="domcontentloaded")
     if re.search(r"/(login|authwall|checkpoint)", page.url):
         return "login_required"
@@ -74,18 +94,76 @@ def resolve_apply_url(page, job_url, timeout=15000):
             break
     if btn is None:
         return None
-    try:
-        with page.context.expect_page(timeout=timeout) as info:
-            btn.click()
-        popup = info.value
-        popup.wait_for_load_state("domcontentloaded")
-        url = popup.url
-        popup.close()
-        return url
-    except Exception:
-        # Some postings navigate in the same tab instead of opening one.
-        page.wait_for_load_state("domcontentloaded")
-        return page.url if page.url != job_url else None
+    ctx, start = page.context, page.url
+    before = set(ctx.pages)
+    btn.click()
+    deadline = time.monotonic() + timeout / 1000
+    prompts = 0
+    while time.monotonic() < deadline:
+        for p in [p for p in ctx.pages if p not in before]:
+            # A new tab: wait for it to finish redirecting off LinkedIn, then keep its URL.
+            end = time.monotonic() + 10
+            while not _left_linkedin(p.url, start) and time.monotonic() < end:
+                p.wait_for_timeout(250)
+            url = p.url
+            p.close()
+            return url if _left_linkedin(url, start) else None
+        if _left_linkedin(page.url, start):       # navigated in the same tab
+            return page.url
+        if prompts < 2:
+            dlg = page.locator("dialog[open], [role=dialog], [role=alertdialog]")
+            if dlg.count() and dlg.first.is_visible():
+                go = dlg.first.get_by_role("button", name=CONTINUE)
+                if go.count() and go.first.is_visible():
+                    go.first.click()
+                    prompts += 1
+        page.wait_for_timeout(300)
+    return None
+
+
+DISMISS_JS = r"""
+(sel) => {
+  // Overlays that hold at most a couple of inputs (a cookie banner, a newsletter box), never the form itself.
+  const out = [];
+  for (const box of document.querySelectorAll(sel)) {
+    const r = box.getBoundingClientRect();
+    if (!r.width || !r.height || getComputedStyle(box).visibility === 'hidden') continue;
+    if (box.querySelectorAll('input:not([type=hidden]):not([type=checkbox]), select, textarea').length > 2) continue;
+    if (box.closest('form') && box.closest('form').querySelectorAll('input, select, textarea').length > 2) continue;
+    out.push(box);
+  }
+  out.forEach((b, i) => b.setAttribute('data-jh-overlay', String(i)));
+  return out.length;
+}
+"""
+
+
+def dismiss_overlays(page, rounds=3):
+    """Close cookie banners and pop-ups covering the page. Returns how many were closed.
+    Only clicks accept/close-style buttons inside overlays that aren't the application form."""
+    closed = 0
+    for _ in range(rounds):
+        try:
+            n = page.evaluate(DISMISS_JS, OVERLAY)
+        except Exception:
+            return closed
+        hit = False
+        for i in range(n):
+            box = page.locator(f'[data-jh-overlay="{i}"]')
+            for cand in (box.get_by_role("button", name=ACCEPT), box.get_by_role("link", name=ACCEPT),
+                         box.locator("[aria-label*=close i], [aria-label*=dismiss i], [class*=close i]")):
+                try:
+                    if cand.count() and cand.first.is_visible():
+                        cand.first.click(timeout=2000)
+                        closed += 1
+                        hit = True
+                        break
+                except Exception:
+                    continue
+        if not hit:
+            break
+        page.wait_for_timeout(400)
+    return closed
 
 
 class PortalWalk:
@@ -135,9 +213,12 @@ class PortalWalk:
             return self.report("needs_user", note=f"{self.ats} portals need an account you create; "
                                                   f"apply by hand at {self.apply_url}")
         self.page.goto(form_url(self.apply_url), wait_until="domcontentloaded")
+        dismiss_overlays(self.page)
         self._follow_embed()
         if not self._has_form():
             self._click_apply_link()
+            dismiss_overlays(self.page)
+            self._follow_embed()
         if not self._has_form():
             return self.report("error", error="no application form found on the portal page")
         return None
@@ -162,8 +243,21 @@ class PortalWalk:
         for role in ("link", "button"):
             cand = self.page.get_by_role(role, name=APPLY_LINK)
             if cand.count():
+                before = set(self.page.context.pages)
                 cand.first.click()
-                self.page.wait_for_load_state("domcontentloaded")
+                self.page.wait_for_timeout(1500)
+                new = [p for p in self.page.context.pages if p not in before]
+                if new:      # the form opened in a new tab: bring it into this one
+                    try:
+                        new[0].wait_for_load_state("domcontentloaded", timeout=10000)
+                    except Exception:
+                        pass
+                    url = new[0].url
+                    for p in new:
+                        p.close()
+                    self.page.goto(url, wait_until="domcontentloaded")
+                else:
+                    self.page.wait_for_load_state("domcontentloaded")
                 return
 
     # --- filling and submitting ---------------------------------------------

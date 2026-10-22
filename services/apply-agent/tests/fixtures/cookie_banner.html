@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- An application form under a full-screen cookie banner that blocks clicks until accepted. -->
+<html><head><meta charset="utf-8"><title>Apply - Banner Co</title>
+<style>#onetrust-banner-sdk{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99}</style></head>
+<body>
+<form>
+  <label for="fn">First Name *</label><input id="fn" type="text" required>
+  <label for="em">Email *</label><input id="em" type="email" required>
+  <fieldset><legend>Do you need sponsorship? *</legend>
+    <label><input type="radio" name="sp" value="y" required> Yes</label>
+    <label><input type="radio" name="sp" value="n"> No</label></fieldset>
+  <label for="cv">Resume *</label><input id="cv" type="file" required>
+  <button type="submit">Submit application</button>
+</form>
+<div id="onetrust-banner-sdk"><p>We use cookies.</p><button id="ok">Accept All Cookies</button></div>
+<script>document.getElementById('ok').onclick = () => document.getElementById('onetrust-banner-sdk').remove();</script>
+</body></html>

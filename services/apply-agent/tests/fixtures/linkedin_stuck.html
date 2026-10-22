@@ -1,0 +1,8 @@
+<!doctype html>
+<!-- Stand-in LinkedIn job page whose Apply only shows a dialog with no way forward. -->
+<html><head><meta charset="utf-8"><title>Senior PM - Stuck Co</title></head>
+<body>
+<button id="apply" aria-label="Apply to Senior Product Manager on company website">Apply</button>
+<div role="dialog" id="dlg" hidden aria-label="Premium"><p>Try Premium for free</p><button>Cancel</button></div>
+<script>document.getElementById('apply').onclick = () => { document.getElementById('dlg').hidden = false; };</script>
+</body></html>

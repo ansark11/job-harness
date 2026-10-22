@@ -141,3 +141,48 @@ class PortalTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PopupTests(unittest.TestCase):
+    """LinkedIn's leaving-LinkedIn prompts and the overlays real portals put over their forms."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pw = sync_playwright().start()
+        cls.browser = cls.pw.chromium.launch(headless=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls.pw.stop()
+
+    def setUp(self):
+        self.ctx = self.browser.new_context()
+        self.page = self.ctx.new_page()
+
+    def tearDown(self):
+        self.ctx.close()
+
+    def test_continue_prompt_is_clicked_through(self):
+        url = (FIX / "linkedin_interstitial.html").as_uri()
+        self.assertEqual(portals.resolve_apply_url(self.page, url), CAREERS)
+
+    def test_never_returns_the_linkedin_page_itself(self):
+        url = (FIX / "linkedin_stuck.html").as_uri()
+        self.assertIsNone(portals.resolve_apply_url(self.page, url, timeout=2500))
+
+    def test_left_linkedin(self):
+        self.assertFalse(portals._left_linkedin("https://www.linkedin.com/jobs/view/1/", "https://www.linkedin.com/jobs/view/1"))
+        self.assertFalse(portals._left_linkedin("about:blank", "x"))
+        self.assertTrue(portals._left_linkedin("https://jobs.lever.co/x/1", "https://www.linkedin.com/jobs/view/1"))
+
+    def test_cookie_banner_is_accepted_and_form_fills(self):
+        self.page.goto((FIX / "cookie_banner.html").as_uri())
+        self.assertEqual(portals.dismiss_overlays(self.page), 1)
+        self.assertEqual(self.page.locator("#onetrust-banner-sdk").count(), 0)
+        self.page.locator("#fn").fill("Jane", timeout=2000)      # clickable now
+
+    def test_form_in_a_modal_is_left_alone(self):
+        self.page.goto((FIX / "modal_form.html").as_uri())
+        self.assertEqual(portals.dismiss_overlays(self.page), 0)
+        self.assertTrue(self.page.locator("#m").is_visible())

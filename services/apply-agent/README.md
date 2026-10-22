@@ -55,11 +55,25 @@ Choice answers match the form's own wording where unambiguous ("No" →
 matches the form's decline option ("I don't wish to answer" → "Decline To
 Self Identify").
 
+## Portal benchmark (`bench.py`)
+
+Scores the form engine on real employer portals: which controls it misses,
+which values don't stick, follow-up questions, multi-page flows, CAPTCHAs.
+Fills with a made-up test person and a placeholder PDF, blocks outgoing
+form data while filling, and never submits. Run it through
+`workflows/portal_bench` (which picks your portal postings from the tracker),
+or directly:
+
+```bash
+./python/bin/python bench.py run targets.json [--headless] [--limit N] [--no-resolve]
+./python/bin/python bench.py replay data/bench/<run>   # re-read saved pages offline
+```
+
 ## Data (gitignored)
 
 `data/browser-profile/` your LinkedIn session · `data/submissions.jsonl`
 daily-cap counter · `data/uploads/` resume copies with readable names ·
-`data/screens/` screenshots.
+`data/screens/` screenshots · `data/bench/` benchmark runs and the portal URL cache.
 
 ## Account risk
 

@@ -18,7 +18,9 @@ workflows that chain them. Spec: `../opportunity-search.md`.
 | `launchd/` | LaunchAgent plists for the daily run. |
 
 Workflows: `workflows/daily_search` (search → match → ingest, scheduled) and
-`workflows/apply` (apply-agent ↔ bank/drafter/inbox rounds until submitted).
+`workflows/apply` (apply-agent ↔ bank/drafter/inbox rounds until submitted), and
+`workflows/portal_bench` (scores the apply-agent on your real portal postings
+with fake data; never submits).
 
 Build order and design: `~/.claude/plans/i-m-looking-to-build-sleepy-floyd.md`.
 Phase A builds every feature headless (CLI + tests); the UI comes after the

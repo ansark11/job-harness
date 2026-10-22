@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- Stand-in for the controls real portals use that plain inputs don't cover:
+     a div-based dropdown, an input that only keeps typed keystrokes (React-style),
+     a follow-up question revealed by an answer, a field inside shadow DOM,
+     and an autosave request on change. -->
+<html><head><meta charset="utf-8"><title>Apply - Tricky Co</title>
+<style>[hidden]{display:none!important}</style></head>
+<body>
+<header><input type="text" aria-label="Search jobs"></header>
+<form id="app" novalidate>
+  <label for="first">First Name *</label><input id="first" type="text" required>
+
+  <span id="dept-l">Department *</span>
+  <div role="combobox" aria-required="true" aria-labelledby="dept-l" tabindex="0">Select...</div>
+
+  <label for="nick">Preferred name</label><input id="nick" type="text">
+
+  <fieldset>
+    <legend>Have you worked here before? *</legend>
+    <label><input type="radio" name="before" value="yes" required> Yes</label>
+    <label><input type="radio" name="before" value="no"> No</label>
+  </fieldset>
+  <div id="when-wrap" hidden><label for="when">When did you work here? *</label><input id="when" type="text" required></div>
+
+  <pronoun-field></pronoun-field>
+
+  <button type="submit">Submit application</button>
+</form>
+<script>
+  // Controlled input: only keystrokes update its state; on blur the state wins.
+  const nick = document.getElementById('nick');
+  let nickState = '';
+  nick.addEventListener('keydown', e => { if (e.key.length === 1) nickState += e.key; });
+  nick.addEventListener('blur', () => { nick.value = nickState; });
+
+  for (const r of document.querySelectorAll('input[name=before]'))
+    r.addEventListener('change', () => { document.getElementById('when-wrap').hidden = r.value !== 'yes' || !r.checked; });
+
+  document.getElementById('first').addEventListener('change', () => {
+    fetch('https://portal.example/api/save-draft', {method: 'POST', body: JSON.stringify({first: 'x'})}).catch(() => {});
+  });
+
+  customElements.define('pronoun-field', class extends HTMLElement {
+    connectedCallback() {
+      const root = this.attachShadow({mode: 'open'});
+      root.innerHTML = '<label for="p">Pronouns</label><input id="p" type="text">';
+    }
+  });
+</script>
+</body></html>
