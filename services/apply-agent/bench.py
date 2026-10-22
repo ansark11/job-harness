@@ -75,6 +75,14 @@ ATS_MARKUP = [
 
 # A made-up applicant. Nothing of yours is ever typed into a portal by the benchmark.
 PERSONA = [
+    # Realistic answers a form can accept, so a failure is the engine's, not the test data's.
+    (r"gender|race|ethnic|hispanic|latin|veteran|disabilit|pronoun|lgbt|sexual", "I don't wish to answer"),
+    (r"sponsor", "No"),
+    (r"authori[sz]ed|eligible|legally|right to work", "Yes"),
+    (r"country", "Canada"),
+    (r"degree", "Bachelor's Degree"),
+    (r"state|province", "Ontario"),
+    (r"how did you hear|source|referr", "LinkedIn"),
     (r"first.?name|given name|prenom", "Bench"),
     (r"last.?name|surname|family name", "Tester"),
     (r"^(full )?name$|your name|legal name", "Bench Tester"),
@@ -208,7 +216,14 @@ def persona_value(field):
     """A fake but plausible value for one field: the first option for choices."""
     t, label = field["type"], (field.get("label") or "").lower()
     opts = [o for o in (field.get("options") or []) if o]
-    if t in ("radio", "select", "button_choice"):
+    if t in ("radio", "select", "button_choice", "combo_select"):
+        # The option a real answer would pick if there is one ("Canada", "No"), else the first.
+        for pat, val in PERSONA:
+            if re.search(pat, label):
+                fit = forms.match_option(val, opts)
+                if fit:
+                    return fit
+                break
         return opts[0] if opts else None
     if t == "checkbox_group":
         return [opts[0]] if opts else None
@@ -338,10 +353,8 @@ def audit(page, target, out_dir, resume_pdf, blocker, pause=(0.1, 0.3), budget=1
     res["opened"] = "form"
 
     res["overlays_closed"] = portals.dismiss_overlays(page)
-    fields = forms.extract_fields(page)
-    for f in fields:
-        f["combobox"] = page.locator(f'[data-jh-id="{f["id"]}"]').first.get_attribute("role") == "combobox" \
-            if f["type"] not in ("radio", "checkbox_group", "button_choice") else False
+    fields = forms.extract_fields(page, probe=True)      # as the portal agent reads it
+    res["dropdowns_read"] = sum(f["type"] == "combo_select" for f in fields)
     census = page.evaluate(CENSUS_JS)
     try:
         (out_dir / "aria.txt").write_text(page.locator("body").aria_snapshot())
@@ -352,7 +365,8 @@ def audit(page, target, out_dir, resume_pdf, blocker, pause=(0.1, 0.3), budget=1
     blocker.armed = True
     seen, seen_keys, results, passes = set(), set(), [], 0
     batch = fields
-    resume = next((f for f in fields if f["type"] == "file" and re.search(r"resume|cv", f["label"], re.I)), None)
+    resume = next((f for f in fields if f["type"] == "file"
+                   and portals.RESUME_FIELD.search(f"{f['label']} {f['key']}")), None)
     while batch and passes < 3 and time.monotonic() - t0 < budget:
         passes += 1
         for f in batch:
@@ -383,11 +397,16 @@ def audit(page, target, out_dir, resume_pdf, blocker, pause=(0.1, 0.3), budget=1
             if pause:
                 time.sleep(random.uniform(*pause))
         # Button groups get fresh ids on every read, so a field counts as new only if its question is new.
-        later = [f for f in forms.extract_fields(page) if f["id"] not in seen and (f["key"], f["type"]) not in seen_keys]
+        later = [f for f in forms.extract_fields(page, probe=True)
+                 if f["id"] not in seen and (f["key"], f["type"]) not in seen_keys]
         for f in later:
-            f["combobox"] = False
             f["appeared_after_fill"] = True
         batch = later
+    # As the portal agent does: retype anything the page cleared (a form still starting up, a re-render).
+    typed = [(f, r["intended"]) for f, _, r in results if r.get("outcome") == "filled" and "intended" in r]
+    page.locator("body").click(position={"x": 1, "y": 1}, force=True)    # leave the last field, as a person would
+    cleared = forms.lost_values(page, typed)
+    res["retyped"] = len(cleared) - len(forms.refill_lost(page, cleared)) if cleared else 0
     blocker.armed = False
     res["overlays_closed"] += portals.dismiss_overlays(page)
 

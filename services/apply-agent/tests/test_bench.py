@@ -121,7 +121,9 @@ class AuditTests(unittest.TestCase):
         self.assertTrue(missed["Pronouns"]["in_shadow"])           # inside shadow DOM
         self.assertNotIn("Search jobs", missed)                    # site chrome outside the form ignored
         by = {f["label"]: f for f in r["fields"]}
-        self.assertEqual(by["Preferred name"]["outcome"], "did_not_stick")
+        # Keystroke-only input: cleared after the first fill, kept after a keystroke retype.
+        self.assertEqual(by["Preferred name"]["outcome"], "verified")
+        self.assertGreaterEqual(r["retyped"], 1)
         self.assertTrue(by["When did you work here?"]["appeared_after_fill"])
         self.assertEqual(by["When did you work here?"]["outcome"], "verified")
         self.assertTrue(any("save-draft" in b["url"] for b in r["blocked_requests"]))
