@@ -186,3 +186,78 @@ class PopupTests(unittest.TestCase):
         self.page.goto((FIX / "modal_form.html").as_uri())
         self.assertEqual(portals.dismiss_overlays(self.page), 0)
         self.assertTrue(self.page.locator("#m").is_visible())
+
+
+class EngineGapTests(unittest.TestCase):
+    """The gaps the first live benchmark found on Engine's Greenhouse form and Mastercard's careers page."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pw = sync_playwright().start()
+        cls.browser = cls.pw.chromium.launch(headless=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls.pw.stop()
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.resume = Path(self.tmp.name) / "Jane Doe - Resume.pdf"
+        self.resume.write_bytes(b"%PDF-1.4 test")
+        self.ctx = self.browser.new_context()
+        self.page = self.ctx.new_page()
+
+    def tearDown(self):
+        self.ctx.close()
+        self.tmp.cleanup()
+
+    GH_NEW = (FIX / "greenhouse_new.html").as_uri()
+
+    def test_searchable_dropdown_is_read_with_its_options(self):
+        import forms
+        self.page.goto(self.GH_NEW)
+        by = {f["key"]: f for f in forms.extract_fields(self.page, probe=True)}
+        self.assertEqual(by["country"]["type"], "combo_select")
+        self.assertEqual(by["country"]["options"], ["Canada", "United States", "United Kingdom"])
+        self.assertEqual(by["location city"]["type"], "text")           # a typeahead stays text
+        self.assertTrue(by["location city"]["combobox"])
+        self.assertEqual(by["resume cv"]["type"], "file")               # named by its role=group
+
+    def test_wrong_dropdown_or_typeahead_value_is_an_error_not_a_guess(self):
+        import forms
+        self.page.goto(self.GH_NEW)
+        by = {f["key"]: f for f in forms.extract_fields(self.page, probe=True)}
+        with self.assertRaises(forms.FillError):
+            forms.fill_field(self.page, by["country"], "Atlantis")
+        with self.assertRaises(forms.FillError):
+            forms.fill_field(self.page, by["location city"], "Torino")   # suggestions appear, none match
+
+    def test_fills_through_a_form_that_resets_early_typing(self):
+        answers = {"first name": "Jane", "last name": "Doe", "email": "jane@example.com", "country": "Canada",
+                   "location city": "Toronto"}
+        packet = {"application_id": "a1", "job": {"id": "9", "url": self.GH_NEW, "apply_type": "external",
+                                                  "apply_url": self.GH_NEW},
+                  "resume_file": str(self.resume), "answers": answers, "skip": []}
+        r = portals.PortalWalk(self.page, packet, "submit", False, pause=None, success_wait=3).run()
+        self.assertEqual(r["status"], "submitted", r.get("unknown"))
+        self.assertEqual(self.page.evaluate("window.submitted"),
+                         {"first": "Jane", "last": "Doe", "email": "jane@example.com", "country": "Canada",
+                          "city": "Toronto, ON, Canada", "resume": "Jane Doe - Resume.pdf"})
+
+    def test_job_page_inputs_are_not_an_application_and_apply_leads_to_workday(self):
+        self.ctx.route("https://acme.wd5.myworkdayjobs.com/**", lambda route: route.fulfill(
+            content_type="text/html", body="<h1>Workday</h1><button>Sign In</button>"))
+        page_url = (FIX / "careers_jobpage.html").as_uri()
+        packet = {"application_id": "a1", "job": {"id": "9", "url": page_url, "apply_type": "external",
+                                                  "apply_url": page_url},
+                  "resume_file": str(self.resume), "answers": {}, "skip": []}
+        r = portals.PortalWalk(self.page, packet, "fill", False, pause=None).run()
+        self.assertEqual((r["status"], r["ats"]), ("needs_user", "workday"))
+        self.assertTrue(r["apply_url"].startswith("https://acme.wd5.myworkdayjobs.com/"))
+
+    def test_looks_like_application(self):
+        f = lambda t, label: {"type": t, "label": label, "key": label.lower()}      # noqa: E731
+        self.assertFalse(portals.looks_like_application([f("text", "Search jobs"), f("email", "Email")]))
+        self.assertTrue(portals.looks_like_application([f("text", "First Name"), f("text", "Email")]))
+        self.assertTrue(portals.looks_like_application([f("file", "Resume/CV")]))

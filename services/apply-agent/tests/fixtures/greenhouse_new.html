@@ -1,0 +1,61 @@
+<!doctype html>
+<!-- Stand-in for Greenhouse's newer job-boards form: searchable dropdowns (an input with
+     role=combobox and a list that opens on click), a city typeahead, a hidden resume input
+     named only by its role=group, and a page that "hydrates" ~1.2 s after load, clearing
+     anything typed before then (what happened on Engine's real form). -->
+<html><head><meta charset="utf-8"><title>Apply - Hydrate Co</title>
+<style>[hidden]{display:none!important} .menu{border:1px solid #ccc} .option{padding:2px}
+  .sr{position:absolute;opacity:0;width:1px;height:1px}</style></head>
+<body>
+<form id="application" novalidate>
+  <label for="first_name">First Name *</label><input id="first_name" type="text" aria-required="true">
+  <label for="last_name">Last Name *</label><input id="last_name" type="text" aria-required="true">
+  <label for="email">Email *</label><input id="email" type="text" aria-required="true">
+
+  <label id="country-l" for="country">Country *</label>
+  <div class="select"><div id="country-shown">Select...</div>
+    <input id="country" type="text" role="combobox" aria-autocomplete="list" aria-labelledby="country-l" aria-required="true">
+    <div class="menu" role="listbox" id="country-menu" hidden></div></div>
+
+  <label for="city">Location (City) *</label>
+  <input id="city" type="text" role="combobox" aria-autocomplete="list" aria-required="true">
+  <ul role="listbox" id="city-list" hidden></ul>
+
+  <div role="group" aria-label="Resume/CV*">
+    <span>Resume/CV*</span><button type="button" id="attach">Attach</button>
+    <input id="resume" type="file" class="sr">
+  </div>
+  <button type="submit">Submit application</button>
+</form>
+<div id="thanks" hidden><h2>Thank you for applying!</h2></div>
+<script>
+  const $ = id => document.getElementById(id);
+  const COUNTRIES = ['Canada', 'United States', 'United Kingdom'];
+  let country = null;
+  function menu(filter) {
+    const m = $('country-menu');
+    m.innerHTML = COUNTRIES.filter(c => !filter || c.toLowerCase().includes(filter.toLowerCase()))
+      .map(c => `<div class="option" role="option">${c}</div>`).join('');
+    m.hidden = false;
+    m.querySelectorAll('[role=option]').forEach(o => o.onmousedown = o.onclick = () => {
+      country = o.textContent; $('country-shown').textContent = country; $('country').value = ''; m.hidden = true; });
+  }
+  $('country').addEventListener('click', () => menu(''));
+  $('country').addEventListener('input', e => menu(e.target.value));
+  $('country').addEventListener('keydown', e => { if (e.key === 'Escape') $('country-menu').hidden = true; });
+  const CITIES = ['Toronto, ON, Canada', 'Toronto, OH, United States', 'Vancouver, BC, Canada'];
+  $('city').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase(), l = $('city-list');
+    l.innerHTML = q.length < 2 ? '' : CITIES.filter(c => c.toLowerCase().startsWith(q.slice(0, 3)))
+      .map(c => `<li role="option">${c}</li>`).join('');
+    l.hidden = !l.children.length;
+    l.querySelectorAll('[role=option]').forEach(o => o.onclick = () => { $('city').value = o.textContent; l.hidden = true; });
+  });
+  // "Hydration": the app takes over 1.2 s after load and resets every typed field.
+  setTimeout(() => ['first_name', 'last_name', 'email', 'city'].forEach(id => $(id).value = ''), 1200);
+  $('application').onsubmit = e => { e.preventDefault();
+    window.submitted = {first: $('first_name').value, last: $('last_name').value, email: $('email').value,
+      country, city: $('city').value, resume: $('resume').files.length ? $('resume').files[0].name : null};
+    $('application').hidden = true; $('thanks').hidden = false; };
+</script>
+</body></html>

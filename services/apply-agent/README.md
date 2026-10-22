@@ -50,6 +50,15 @@ For postings that apply on the company's site:
 - **Left to you (`needs_user`):** Workday, iCIMS and Taleo (they need an
   account you create), and a CAPTCHA that wasn't solved.
 
+- **Robust filling:** waits for the page to finish loading its scripts, then
+  re-reads every typed field and retypes (as keystrokes) any the page cleared,
+  which handles forms still starting up and inputs that drop pasted values. Searchable
+  dropdowns are opened and read like normal dropdowns, so answers pick a listed
+  option; a typeahead (city, school) picks the matching suggestion, never an
+  unrelated one. A page counts as an application only with a resume upload or
+  name and email fields, so a careers site's search bar doesn't; its Apply
+  button is followed, and a Workday-style destination is handed to you.
+
 Choice answers match the form's own wording where unambiguous ("No" →
 "No, I will not require sponsorship"), and any decline-to-answer wording
 matches the form's decline option ("I don't wish to answer" → "Decline To

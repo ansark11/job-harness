@@ -166,6 +166,20 @@ def dismiss_overlays(page, rounds=3):
     return closed
 
 
+NAME_FIELD = re.compile(r"\b(first|last|full|legal|given|family|sur)\s*-?name\b|^name$", re.I)
+EMAIL_FIELD = re.compile(r"e-?mail", re.I)
+RESUME_FIELD = re.compile(r"resume|r[ée]sum[ée]|\bcv\b|curriculum", re.I)
+
+
+def looks_like_application(fields):
+    named = lambda f: f"{f['label']} {f.get('key', '')}"      # noqa: E731
+    if any(f["type"] == "file" and RESUME_FIELD.search(named(f)) for f in fields):
+        return True
+    has_name = any(f["type"] in ("text",) and NAME_FIELD.search(named(f)) for f in fields)
+    has_email = any(f["type"] in ("email", "text") and EMAIL_FIELD.search(named(f)) for f in fields)
+    return has_name and has_email
+
+
 class PortalWalk:
     def __init__(self, page, packet, mode, dry_run, shots_dir=None, pause=(0.3, 0.9), success_wait=20):
         self.page = page
@@ -213,10 +227,20 @@ class PortalWalk:
             return self.report("needs_user", note=f"{self.ats} portals need an account you create; "
                                                   f"apply by hand at {self.apply_url}")
         self.page.goto(form_url(self.apply_url), wait_until="domcontentloaded")
+        forms.settle(self.page)
         dismiss_overlays(self.page)
         self._follow_embed()
         if not self._has_form():
+            # A job page (careers site): its Apply button leads to the form, often on another system.
             self._click_apply_link()
+            forms.settle(self.page)
+            landed = detect(self.page.url)
+            if landed != "generic":
+                self.ats = landed
+            if self.ats in MANUAL:
+                self.apply_url = self.page.url
+                return self.report("needs_user", note=f"{self.ats} portals need an account you create; "
+                                                      f"apply by hand at {self.page.url}")
             dismiss_overlays(self.page)
             self._follow_embed()
         if not self._has_form():
@@ -232,14 +256,22 @@ class PortalWalk:
                 return
 
     def _has_form(self):
+        """An application form, not just inputs: a resume upload, or name and email fields together.
+        A careers site's job-search bar or job-alert email box doesn't count."""
         try:
             self.page.locator("input:not([type=hidden]), textarea, select").first.wait_for(state="attached",
                                                                                             timeout=4000)
         except Exception:
             return False
-        return any(f["type"] in ("file", "text", "email", "tel", "textarea") for f in forms.extract_fields(self.page))
+        return looks_like_application(forms.extract_fields(self.page))
 
     def _click_apply_link(self):
+        # Careers sites render their Apply button late; give it a moment to appear.
+        try:
+            self.page.get_by_role("link", name=APPLY_LINK).or_(
+                self.page.get_by_role("button", name=APPLY_LINK)).first.wait_for(state="visible", timeout=8000)
+        except Exception:
+            pass
         for role in ("link", "button"):
             cand = self.page.get_by_role(role, name=APPLY_LINK)
             if cand.count():
@@ -264,12 +296,12 @@ class PortalWalk:
 
     def fill(self):
         unknown = 0
-        fields = forms.extract_fields(self.page)
+        fields = forms.extract_fields(self.page, probe=True)
         for f in fields:
             f["page"] = 1
             self.fields.append(f)
-        resume = next((f for f in fields if f["type"] == "file" and re.search(r"resume|cv", f["label"], re.I)), None) \
-            or next((f for f in fields if f["type"] == "file"), None)
+        resume = next((f for f in fields if f["type"] == "file" and RESUME_FIELD.search(f"{f['label']} {f['key']}")),
+                      None) or next((f for f in fields if f["type"] == "file"), None)
         for f in fields:
             if f is resume:
                 forms.fill_field(self.page, f, self.packet["resume_file"])
@@ -291,6 +323,12 @@ class PortalWalk:
                 f["outcome"] = "unknown"
                 unknown += 1
             self._wait()
+        # A page still starting up, or re-rendering after an answer, can clear what was typed.
+        lost = forms.refill_lost(self.page, [(f, f["filled"]) for f in fields if f.get("outcome") == "filled"
+                                             and f.get("source") == "packet"])
+        for f, _ in lost:
+            f["outcome"], f["error"] = "unknown", "the page kept clearing this field"
+            unknown += 1
         return unknown
 
     def page_errors(self):

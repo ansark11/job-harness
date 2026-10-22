@@ -39,7 +39,17 @@ EXTRACT_JS = r"""
       const t = clean(by.split(/\s+/).map(i => text(document.getElementById(i))).join(' '));
       if (t) return t;
     }
-    return clean(el.getAttribute('aria-label') || el.placeholder || el.name || '');
+    const own = clean(el.getAttribute('aria-label') || el.placeholder || '');
+    if (own) return own;
+    // Named by a surrounding group instead (Greenhouse: role=group "Resume/CV*" around a hidden file input).
+    const grp = el.closest('[role=group], fieldset');
+    if (grp) {
+      const by = grp.getAttribute('aria-labelledby');
+      const t = clean((by && document.getElementById(by) && text(document.getElementById(by))) ||
+                      grp.getAttribute('aria-label') || '');
+      if (t) return t;
+    }
+    return clean(el.name || el.id || '');
   };
   // Text shown just before an element: LinkedIn puts a radio question's text in a sibling
   // above the radiogroup rather than in a <legend>.
@@ -121,6 +131,7 @@ EXTRACT_JS = r"""
     const label = labelFor(el);
     const d = {id, type, label, required: el.required || el.getAttribute('aria-required') === 'true'
                                           || /\*\s*$|\(required\)/i.test(label),
+               combobox: el.getAttribute('role') === 'combobox' || el.hasAttribute('aria-autocomplete'),
                value: type === 'checkbox' ? el.checked : (el.value || null),
                maxlength: el.maxLength > 0 ? el.maxLength : null};
     if (type === 'file') { d.value = null; d.accept = el.accept || null; }
@@ -190,13 +201,59 @@ def clean_label(label):
     return label
 
 
-def extract_fields(page, root=None):
+# Visible options only: a dropdown read earlier can leave its (hidden) options in the page.
+OPTIONS = "[role=listbox] [role=option]:visible, [class*=menu] [class*=option]:visible"
+MAX_PROBED_OPTIONS = 300
+
+
+def extract_fields(page, root=None, probe=False):
+    """Every fillable field in `root`. probe=True opens each searchable dropdown to read its
+    options, so it can be answered like a normal dropdown (company portals; slower)."""
     fields = page.evaluate(EXTRACT_JS, root) + page.evaluate(BUTTON_CHOICES_JS, root)
     for f in fields:
         f["label"] = clean_label(f["label"])
         f["key"] = normalize(f["label"])
         f["options"] = f.get("options")
+        f.setdefault("combobox", False)
+    if probe:
+        for f in fields:
+            if f["combobox"] and f["type"] == "text":
+                opts = probe_options(page, f)
+                if opts:
+                    f["type"], f["options"] = "combo_select", opts
     return fields
+
+
+def _visible_options(page):
+    out = []
+    for o in page.locator(OPTIONS).all()[:MAX_PROBED_OPTIONS]:
+        try:
+            if o.is_visible():
+                t = " ".join((o.inner_text() or "").split())
+                if t:
+                    out.append(t)
+        except Exception:
+            continue
+    return out
+
+
+def probe_options(page, field):
+    """Open a searchable dropdown without typing and read its fixed options. [] for a typeahead
+    that only suggests after you type (a city, a school), which stays a text field."""
+    loc = page.locator(f'[data-jh-id="{field["id"]}"]')
+    try:
+        loc.click(timeout=2000)
+        page.locator(OPTIONS).first.wait_for(state="visible", timeout=1500)
+        opts = _visible_options(page)
+    except Exception:
+        opts = []
+    try:
+        loc.press("Escape", timeout=1000)
+    except Exception:
+        pass
+    if opts and len(set(opts)) == 1 and re.search(r"no options|type to search|searching", opts[0], re.I):
+        return []
+    return list(dict.fromkeys(opts))
 
 
 # Self-identification forms word "decline" differently; any of these means the same answer.
@@ -326,6 +383,23 @@ def fill_field(page, field, value, pause=0.0, root=None):
                     raise FillError(f"selected {opt!r} but the form now shows {now!r}")
         chosen = [match_option(w, field["options"]) for w in wanted]
         return chosen[0] if t == "radio" else chosen
+    if t == "combo_select":
+        opt = match_option(value, field["options"])
+        if opt is None:
+            raise FillError(f"{value!r} matches none of {field['options'][:20]}")
+        loc = page.locator(sel)
+        loc.click()
+        loc.fill(opt)              # narrows the list; the choice is the click on the option below
+        choice = page.locator(OPTIONS).filter(has_text=opt)
+        try:
+            choice.first.wait_for(state="visible", timeout=3000)
+        except Exception as e:
+            raise FillError(f"{opt!r} didn't appear in the dropdown") from e
+        exact = [o for o in choice.all() if normalize(o.inner_text()) == normalize(opt)]
+        (exact[0] if exact else choice.first).click()
+        if pause:
+            time.sleep(pause)
+        return opt
     if t == "button_choice":
         opt = match_option(value, field["options"])
         if opt is None:
@@ -348,23 +422,76 @@ def fill_field(page, field, value, pause=0.0, root=None):
         result = value
     else:
         loc.fill(str(value))
-        result = str(value)
-        _pick_suggestion(page, loc, value)
+        result = _pick_suggestion(page, loc, value) or str(value)     # a typeahead holds the picked suggestion
     if pause:
         time.sleep(pause)
     return result
 
 
+TEXTLIKE = {"text", "email", "tel", "number", "url", "textarea", "date", "password"}
+
+
+def settle(page, timeout=8000):
+    """Wait for a page to finish loading its scripts before typing: a form that's still starting
+    up resets anything typed into it."""
+    try:
+        page.wait_for_load_state("networkidle", timeout=timeout)
+    except Exception:
+        pass
+    page.wait_for_timeout(500)
+
+
+def lost_values(page, filled, root=None):
+    """The (field, value) pairs of typed fields that no longer hold what was typed."""
+    now = {f["id"]: f.get("value") for f in extract_fields(page, root)}
+    return [(f, v) for f, v in filled if f["type"] in TEXTLIKE
+            and normalize(str(now.get(f["id"]) or "")) != normalize(str(v))]
+
+
+def refill_lost(page, filled, root=None, passes=2):
+    """Retype fields the page cleared, as real keystrokes, then leave the field and check again.
+    Covers a form still starting up (it resets early typing) and inputs that only accept
+    keystrokes (they drop a pasted value on blur). `filled` is [(field, value)].
+    Returns the pairs still not holding their value."""
+    page.wait_for_timeout(700)
+    pending = lost_values(page, filled, root)
+    for _ in range(passes):
+        if not pending:
+            break
+        for f, v in pending:
+            loc = page.locator(f'[data-jh-id="{f["id"]}"]')
+            try:
+                if f.get("combobox"):            # a typeahead: type and pick the suggestion again
+                    fill_field(page, f, v)
+                else:
+                    loc.fill("")
+                    loc.press_sequentially(str(v), delay=15)
+                loc.evaluate("el => el.blur()")
+            except Exception:
+                pass
+        page.wait_for_timeout(700)
+        pending = lost_values(page, pending, root)
+    return pending
+
+
 def _pick_suggestion(page, loc, value):
-    """Typeahead and searchable-select inputs only accept a value picked from their list:
-    choose the listed option that matches the value, else the first suggestion."""
+    """Typeahead inputs (a city, a school) only accept a value picked from their list: choose
+    the suggestion matching what was typed; failing that, the first one only if it starts with
+    it ("Toronto" -> "Toronto, ON, Canada"). Anything else is a FillError, never a guess."""
     if loc.get_attribute("role") != "combobox" and loc.get_attribute("aria-autocomplete") is None:
-        return
-    options = page.locator("[role=listbox] [role=option]")
+        return None
+    options = page.locator(OPTIONS)
     try:
         options.first.wait_for(state="visible", timeout=2500)
     except Exception:
-        return   # no suggestions: the typed value stands
-    texts = [t.strip() for t in options.all_inner_texts()]
+        return None   # no suggestions: the typed value stands
+    visible = [o for o in options.all()[:MAX_PROBED_OPTIONS] if o.is_visible()]
+    texts = [" ".join((o.inner_text() or "").split()) for o in visible]
     choice = match_option(value, texts)
-    options.nth(texts.index(choice) if choice else 0).click()
+    if choice is None and texts and normalize(texts[0]).startswith(normalize(str(value))):
+        choice = texts[0]
+    if choice is None:
+        loc.press("Escape")
+        raise FillError(f"{value!r} matches none of the suggestions {texts[:10]}")
+    visible[texts.index(choice)].click()
+    return choice
