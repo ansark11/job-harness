@@ -61,6 +61,10 @@ class PortalTests(unittest.TestCase):
         self.resume = Path(self.tmp.name) / "Jane Doe - Resume.pdf"
         self.resume.write_bytes(b"%PDF-1.4 test")
         self.ctx = self.browser.new_context()
+        # The embedded form, served locally at a real Greenhouse address; nothing reaches the network.
+        gh = (FIX / "boards.greenhouse.io" / "apply.html").read_text()
+        self.ctx.route("https://boards.greenhouse.io/**", lambda r: r.fulfill(content_type="text/html", body=gh))
+        self.ctx.route("https://content.googleapis.com/**", lambda r: r.fulfill(content_type="text/html", body=""))
         self.page = self.ctx.new_page()
 
     def tearDown(self):

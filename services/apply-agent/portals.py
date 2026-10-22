@@ -29,10 +29,14 @@ ATS = [
     ("icims", re.compile(r"(^|\.)icims\.com$")),
     ("taleo", re.compile(r"(^|\.)taleo\.net$")),
     ("smartrecruiters", re.compile(r"(^|\.)smartrecruiters\.com$")),
+    ("oracle", re.compile(r"(^|\.)oraclecloud\.com$")),
 ]
-MANUAL = {"workday", "icims", "taleo"}
-EMBED = re.compile(r"greenhouse\.io|lever\.co|ashbyhq\.com", re.I)
+MANUAL = {"workday", "icims", "taleo", "oracle"}
+MANUAL_WHY = {"oracle": "asks you to verify your email before applying"}
+EMBEDDABLE = {"greenhouse", "lever", "ashby"}      # ATSs whose form a careers page can embed in an iframe
 APPLY_LINK = re.compile(r"^\s*apply( now| for this (job|role|position))?\s*$", re.I)
+# Visible text, for links whose accessible name is longer ("Apply Now for MASRUSR290187").
+APPLY_TEXT = re.compile(r"^\s*apply( now| for this (job|role|position)| online)?\s*$", re.I)
 SUBMIT = re.compile(r"^\s*submit( (my )?application)?\s*$", re.I)
 SUCCESS = re.compile(r"thank(s| you) for (applying|your (application|interest))|application (has been |was )?"
                      r"(submitted|received)|we('ve| have) received your application", re.I)
@@ -224,7 +228,7 @@ class PortalWalk:
             self.apply_url = url
         self.ats = detect(self.apply_url)
         if self.ats in MANUAL:
-            return self.report("needs_user", note=f"{self.ats} portals need an account you create; "
+            return self.report("needs_user", note=f"{self.ats} portals {MANUAL_WHY.get(self.ats, 'need an account you create')}; "
                                                   f"apply by hand at {self.apply_url}")
         self.page.goto(form_url(self.apply_url), wait_until="domcontentloaded")
         forms.settle(self.page)
@@ -239,7 +243,7 @@ class PortalWalk:
                 self.ats = landed
             if self.ats in MANUAL:
                 self.apply_url = self.page.url
-                return self.report("needs_user", note=f"{self.ats} portals need an account you create; "
+                return self.report("needs_user", note=f"{self.ats} portals {MANUAL_WHY.get(self.ats, 'need an account you create')}; "
                                                       f"apply by hand at {self.page.url}")
             dismiss_overlays(self.page)
             self._follow_embed()
@@ -248,11 +252,17 @@ class PortalWalk:
         return None
 
     def _follow_embed(self):
+        """A careers page that embeds its ATS form: open the form itself. Only when this page has no
+        form of its own, and only a frame hosted by the ATS (a Google helper frame on Greenhouse
+        merely mentions greenhouse.io in its address)."""
+        if self._has_form():
+            return
         for frame in self.page.locator("iframe").all():
             src = urljoin(self.page.url, frame.get_attribute("src") or "")
-            if EMBED.search(src):
+            if detect(src) in EMBEDDABLE:
                 self.ats = detect(src)
                 self.page.goto(src, wait_until="domcontentloaded")
+                forms.settle(self.page)
                 return
 
     def _has_form(self):
@@ -265,32 +275,35 @@ class PortalWalk:
             return False
         return looks_like_application(forms.extract_fields(self.page))
 
+    def _apply_controls(self):
+        by_name = self.page.get_by_role("link", name=APPLY_LINK).or_(self.page.get_by_role("button", name=APPLY_LINK))
+        by_text = self.page.locator("a:visible, button:visible, [role=button]:visible").filter(has_text=APPLY_TEXT)
+        return by_name.or_(by_text)
+
     def _click_apply_link(self):
         # Careers sites render their Apply button late; give it a moment to appear.
         try:
-            self.page.get_by_role("link", name=APPLY_LINK).or_(
-                self.page.get_by_role("button", name=APPLY_LINK)).first.wait_for(state="visible", timeout=8000)
+            self._apply_controls().first.wait_for(state="visible", timeout=8000)
         except Exception:
             pass
-        for role in ("link", "button"):
-            cand = self.page.get_by_role(role, name=APPLY_LINK)
-            if cand.count():
-                before = set(self.page.context.pages)
-                cand.first.click()
-                self.page.wait_for_timeout(1500)
-                new = [p for p in self.page.context.pages if p not in before]
-                if new:      # the form opened in a new tab: bring it into this one
-                    try:
-                        new[0].wait_for_load_state("domcontentloaded", timeout=10000)
-                    except Exception:
-                        pass
-                    url = new[0].url
-                    for p in new:
-                        p.close()
-                    self.page.goto(url, wait_until="domcontentloaded")
-                else:
-                    self.page.wait_for_load_state("domcontentloaded")
-                return
+        cand = self._apply_controls()
+        if cand.count():
+            before = set(self.page.context.pages)
+            cand.first.click()
+            self.page.wait_for_timeout(1500)
+            new = [p for p in self.page.context.pages if p not in before]
+            if new:      # the form opened in a new tab: bring it into this one
+                try:
+                    new[0].wait_for_load_state("domcontentloaded", timeout=10000)
+                except Exception:
+                    pass
+                url = new[0].url
+                for p in new:
+                    p.close()
+                self.page.goto(url, wait_until="domcontentloaded")
+            else:
+                self.page.wait_for_load_state("domcontentloaded")
+            return
 
     # --- filling and submitting ---------------------------------------------
 
