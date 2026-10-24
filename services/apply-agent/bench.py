@@ -580,7 +580,7 @@ def linkedin_state(page):
     except Exception:
         text = ""
     if CLOSED_ON_LINKEDIN.search(text):
-        return "posting closed on LinkedIn (no longer accepting applications)"
+        return "posting closed on LinkedIn (not accepting applications)"
     try:
         if page.get_by_role("button", name=re.compile(r"easy apply", re.I)).first.is_visible():
             return "now an Easy Apply posting (no company portal)"

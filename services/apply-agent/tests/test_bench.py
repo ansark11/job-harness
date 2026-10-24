@@ -245,10 +245,10 @@ class Phase0ReasonTests(unittest.TestCase):
             event = warn = lambda *a, **k: None              # noqa: E731
         with tempfile.TemporaryDirectory() as tmp:
             res = bench.run_targets([{"id": "1", "company": "Co", "title": "PM",
-                                      "resolve_reason": "posting closed on LinkedIn (no longer accepting applications)"}],
+                                      "resolve_reason": "posting closed on LinkedIn (not accepting applications)"}],
                                     Path(tmp), True, Run())
         self.assertEqual((res[0]["verdict"], res[0]["reasons"]),
-                         ("closed", ["posting closed on LinkedIn (no longer accepting applications)"]))
+                         ("closed", ["posting closed on LinkedIn (not accepting applications)"]))
 
     def test_blocked_upload_counts_as_attached(self):
         class Run:
