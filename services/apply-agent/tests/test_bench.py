@@ -195,3 +195,66 @@ class MeasurementTests(unittest.TestCase):
     def test_preferred_name_isnt_answered_as_a_referral_source(self):
         self.assertEqual(bench.persona_value({"type": "text", "label": "Preferred First Name"}), "Bench")
         self.assertEqual(bench.persona_value({"type": "text", "label": "Referral source"}), "LinkedIn")
+
+
+class Phase0ReasonTests(unittest.TestCase):
+    """Crashes and reasons the full benchmark reported that weren't the engine's."""
+
+    def test_blocker_survives_a_compressed_body(self):
+        import gzip
+        aborted = []
+
+        class Req:
+            method, url = "POST", "https://www.google-analytics.com/j/collect"
+            post_data_buffer = gzip.compress(b"v=1&t=pageview")
+
+            @property
+            def post_data(self):
+                raise UnicodeDecodeError("utf-8", b"\x8b", 0, 1, "invalid start byte")
+
+        class Route:
+            request = Req()
+            abort = lambda self: aborted.append(1)          # noqa: E731
+            continue_ = lambda self: None                    # noqa: E731
+        b = bench.Blocker()
+        b.armed = True
+        b(Route())
+        self.assertEqual(aborted, [1])
+
+    def test_pages_and_states(self):
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.set_content("<h1>Sign in</h1><input type=email><input type=password>")
+            self.assertTrue(bench.signin_wall(page))
+            page.set_content("<main><p>No longer accepting applications</p><button>Apply</button></main>")
+            self.assertIn("closed", bench.linkedin_state(page))
+            page.set_content("<main><button>Easy Apply</button></main>")
+            self.assertIn("Easy Apply", bench.linkedin_state(page))
+            page.set_content("<main><p>Senior PM</p></main>")
+            self.assertIn("no Apply button", bench.linkedin_state(page))
+            page.set_content("<main><button>Apply</button></main>")
+            self.assertIn("never left LinkedIn", bench.linkedin_state(page))
+            browser.close()
+
+    def test_unresolved_reason_reaches_the_report(self):
+        class Run:
+            event = warn = lambda *a, **k: None              # noqa: E731
+        with tempfile.TemporaryDirectory() as tmp:
+            res = bench.run_targets([{"id": "1", "company": "Co", "title": "PM",
+                                      "resolve_reason": "posting closed on LinkedIn (no longer accepting applications)"}],
+                                    Path(tmp), True, Run())
+        self.assertEqual((res[0]["verdict"], res[0]["reasons"]),
+                         ("unresolved", ["posting closed on LinkedIn (no longer accepting applications)"]))
+
+    def test_blocked_upload_counts_as_attached(self):
+        class Run:
+            event = warn = lambda *a, **k: None              # noqa: E731
+        url = (FIX / "upload_then_progress.html").as_uri()
+        with tempfile.TemporaryDirectory() as tmp:
+            res = bench.run_targets([{"id": "1", "company": "Co", "title": "PM", "apply_url": url}], Path(tmp), True, Run())
+        resume = next(f for f in res[0]["fields"] if f["label"] == "Resume/CV")
+        self.assertEqual(resume["outcome"], "verified")
+        self.assertIn("blocks the upload", resume["why"])
+        self.assertTrue(resume["required"])

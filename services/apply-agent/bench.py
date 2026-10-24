@@ -328,7 +328,12 @@ class Blocker:
     def __call__(self, route):
         req = route.request
         if self.armed and req.method not in ("GET", "HEAD", "OPTIONS") and not NO_DATA_OUT.search(req.url):
-            body = req.post_data or ""
+            try:
+                # Bytes, not text: a gzip-compressed analytics body isn't UTF-8, and an error
+                # raised here surfaces as a crash on whatever field was being filled.
+                body = (req.post_data_buffer or b"").decode("utf-8", "replace")
+            except Exception:
+                body = ""
             is_query = '"query":"query' in body.replace(" ", "") or '"query":"{' in body.replace(" ", "")
             if not is_query:
                 self.blocked.append({"method": req.method, "url": req.url[:200]})
@@ -364,6 +369,9 @@ def audit(page, target, out_dir, resume_pdf, blocker, pause=(0.1, 0.3), budget=1
     if early:
         res["opened"] = early["status"]
         res["open_error"] = early.get("error") or early.get("note")
+        if early["status"] == "error" and signin_wall(page):
+            res["opened"] = "needs_user"
+            res["open_error"] = f"sign-in required before the form ({urlsplit(page.url).hostname})"
         return finish(res, page, out_dir, t0)
     res["opened"] = "form"
 
@@ -401,9 +409,13 @@ def audit(page, target, out_dir, resume_pdf, blocker, pause=(0.1, 0.3), budget=1
                 r.update(outcome="no_options", why="a choice field with no readable options")
                 results.append((f, None, r))
                 continue
+            blocked_before = len(blocker.blocked)
             try:
                 r["intended"] = forms.fill_field(page, f, value)
                 r["outcome"] = "filled"
+                if f["type"] == "file":
+                    page.wait_for_timeout(1500)        # sites upload the file as soon as it's picked
+                    r["upload_blocked"] = len(blocker.blocked) > blocked_before
             except forms.FillError as e:
                 r.update(outcome="fill_error", why=str(e)[:200])
             except Exception as e:
@@ -435,10 +447,14 @@ def audit(page, target, out_dir, resume_pdf, blocker, pause=(0.1, 0.3), budget=1
             raw = page.evaluate(READBACK_JS, f["id"] if f["type"] not in ("radio", "checkbox_group", "button_choice")
                                 else f"{f['id']}-0")
             ok, why = verify(f, intended, now.get(f["id"]) or by_key.get((f["key"], f["type"])), raw)
+            if not ok and r.get("upload_blocked"):
+                # The site started uploading the file and the benchmark blocked it (nothing is sent).
+                ok, why = True, "upload started; the benchmark blocks the upload itself"
             r["outcome"] = "verified" if ok else "did_not_stick"
             if why:
                 r["why"] = why
         r.pop("intended", None)
+        r.pop("upload_blocked", None)
         r["appeared_after_fill"] = bool(f.get("appeared_after_fill"))
         rows.append(r)
 
@@ -451,6 +467,19 @@ def audit(page, target, out_dir, resume_pdf, blocker, pause=(0.1, 0.3), budget=1
     res["captcha"] = any(c.is_visible() for c in page.locator(portals.CAPTCHA).all())
     res["fill_passes"] = passes
     return finish(res, page, out_dir, t0)
+
+
+SIGNIN_PATH = re.compile(r"sign.?in|log.?in|/auth|identifier|account", re.I)
+
+
+def signin_wall(page):
+    """A sign-in page where the form should be: a password box, or a sign-in address."""
+    try:
+        if page.locator("input[type=password]").count():
+            return True
+    except Exception:
+        pass
+    return bool(SIGNIN_PATH.search(urlsplit(page.url).path or ""))
 
 
 def finish(res, page, out_dir, t0):
@@ -515,6 +544,28 @@ def load_cache(path=RESOLVED):
     return {k: v for k, v in cache.items() if v and not portals.LINKEDIN.search((urlsplit(v).hostname or "").lower())}
 
 
+CLOSED_ON_LINKEDIN = re.compile(r"no longer accepting applications|this job is no longer available", re.I)
+
+
+def linkedin_state(page):
+    """Why a LinkedIn posting gave no portal: closed, now Easy Apply, no Apply button, or Apply stayed on LinkedIn."""
+    try:
+        text = page.locator("main").first.inner_text(timeout=3000)
+    except Exception:
+        text = ""
+    if CLOSED_ON_LINKEDIN.search(text):
+        return "posting closed on LinkedIn (no longer accepting applications)"
+    try:
+        if page.get_by_role("button", name=re.compile(r"easy apply", re.I)).first.is_visible():
+            return "now an Easy Apply posting (no company portal)"
+        if not page.get_by_role("button", name=re.compile(r"^apply\b", re.I)).count() and \
+                not page.get_by_role("link", name=re.compile(r"^apply\b", re.I)).count():
+            return "no Apply button on the LinkedIn posting"
+    except Exception:
+        pass
+    return "Apply clicked but it never left LinkedIn"
+
+
 def resolve_all(targets, profile_dir, headless, run, cache_path=RESOLVED, pause=(6, 14)):
     """Fill in apply_url for targets that lack one, by clicking Apply on LinkedIn once per posting."""
     cache = load_cache(cache_path)
@@ -542,11 +593,13 @@ def resolve_all(targets, profile_dir, headless, run, cache_path=RESOLVED, pause=
                     run.warn("resolve_login_required")
                     print("LinkedIn wants a sign-in: run login.py, then rerun.", file=sys.stderr)
                     break
+                if not url:
+                    t["resolve_reason"] = linkedin_state(page)
                 if url:
                     t["apply_url"] = cache[t["id"]] = url
                     cache_path.parent.mkdir(parents=True, exist_ok=True)
                     cache_path.write_text(json.dumps(cache, indent=2))
-                run.event("resolved", target=t.get("id"), apply_url=url)
+                run.event("resolved", target=t.get("id"), apply_url=url, reason=t.get("resolve_reason"))
                 where = (urlsplit(url).hostname if url and url != "login_required" else None) or "no portal found"
                 print(f"[find portal {i + 1}/{len(todo)}] {t.get('company')}: {where}", file=sys.stderr, flush=True)
                 if i < len(todo) - 1:
@@ -570,7 +623,8 @@ def run_targets(targets, out, headless, run, browser=None):
         for i, t in enumerate(targets, 1):
             if not t.get("apply_url"):
                 results.append({**{k: t.get(k) for k in ("id", "company", "title")}, "verdict": "unresolved",
-                                "reasons": ["no portal URL (LinkedIn Apply not resolved)"], "ats": "unknown"})
+                                "reasons": [t.get("resolve_reason") or "no portal URL (LinkedIn Apply not resolved)"],
+                                "ats": "unknown"})
                 continue
             tdir = out / "targets" / f"{i:02d}-{re.sub(r'[^A-Za-z0-9]+', '-', t.get('company') or 'x')[:30]}"
             tdir.mkdir(parents=True, exist_ok=True)

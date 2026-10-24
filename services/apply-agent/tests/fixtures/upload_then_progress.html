@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- Like Greenhouse: picking a resume uploads it at once (a POST to file storage) and swaps
+     the file input for a progress bar. The benchmark blocks that POST. -->
+<html><head><meta charset="utf-8"><title>Apply - Upload Co</title></head>
+<body>
+<form id="f" novalidate>
+  <label for="fn">First Name *</label><input id="fn" type="text" required>
+  <label for="em">Email *</label><input id="em" type="email" required>
+  <div role="group" aria-labelledby="rl" aria-required="true" id="resume-box">
+    <div id="rl">Resume/CV*</div><label for="resume" style="position:absolute;opacity:0">Attach</label>
+    <input id="resume" type="file" style="position:absolute;opacity:0;width:1px;height:1px">
+    <button type="button">Attach</button>
+  </div>
+  <button type="submit">Submit application</button>
+</form>
+<script>
+  document.getElementById('resume').addEventListener('change', () => {
+    fetch('https://uploads.example.com/', {method: 'POST', body: 'file-bytes'}).catch(() => {});
+    document.getElementById('resume-box').innerHTML = '<div id="rl">Resume/CV*</div><progress></progress>';
+  });
+</script>
+</body></html>
