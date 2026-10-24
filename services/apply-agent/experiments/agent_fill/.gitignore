@@ -1,0 +1,5 @@
+python/
+data/
+.env
+__pycache__/
+targets.json
