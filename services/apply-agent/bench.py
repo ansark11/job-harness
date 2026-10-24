@@ -82,7 +82,7 @@ PERSONA = [
     (r"country", "Canada"),
     (r"degree", "Bachelor's Degree"),
     (r"state|province", "Ontario"),
-    (r"how did you hear|source|referr", "LinkedIn"),
+    (r"how did you hear|\bsource\b|\breferr", "LinkedIn"),
     (r"first.?name|given name|prenom", "Bench"),
     (r"last.?name|surname|family name", "Tester"),
     (r"^(full )?name$|your name|legal name", "Bench Tester"),
@@ -170,9 +170,15 @@ READBACK_JS = r"""
   const clean = s => (s || '').replace(/\s+/g, ' ').trim();
   const el = document.querySelector(`[data-jh-id="${id}"]`);
   if (!el) return null;
-  let around = '';
-  for (let n = el.parentElement, i = 0; n && i < 3; n = n.parentElement, i++) around = clean(n.innerText);
-  return {value: el.value ?? null, files: el.files ? el.files.length : null, around: around.slice(0, 500)};
+  let around = '', shown = null;
+  for (let n = el.parentElement, i = 0; n && i < 4; n = n.parentElement, i++) {
+    if (i < 3) around = clean(n.innerText);
+    // The choice a custom dropdown displays after a pick (react-select's single-value element).
+    const v = !shown && n.querySelector('[class*=singleValue], [class*=single-value], [class*=single_value], ' +
+                                        '[class*=selected-value], [class*=select__value]');
+    if (v && clean(v.innerText)) shown = clean(v.innerText);
+  }
+  return {value: el.value ?? null, files: el.files ? el.files.length : null, around: around.slice(0, 500), shown};
 }
 """
 
@@ -296,6 +302,15 @@ def verify(field, intended, now, raw):
         return ok, None if ok else f"shows {v!r}"
     if v is not None and same(v, intended):
         return True, None
+    if (t in ("tel", "number") or re.search(r"phone|mobile", field.get("label") or "", re.I)) and v:
+        want, got = re.sub(r"\D", "", str(intended)), re.sub(r"\D", "", str(v))
+        if len(want) >= 3 and got.endswith(want):
+            return True, None      # the site reformatted it: "4165550123" -> "(416) 555-0123"
+    shown = raw.get("shown") if raw else None
+    if shown and field.get("combobox"):
+        a, b = forms.normalize(shown), forms.normalize(str(intended))
+        if a and (a in b or b in a):
+            return True, None      # the dropdown displays the pick, maybe shortened ("+1" for "Canada +1")
     if field.get("combobox") and raw and forms.normalize(str(intended)) in forms.normalize(raw.get("around") or ""):
         return True, None       # a dropdown that shows the pick beside its (now empty) input
     if field.get("combobox") and v:

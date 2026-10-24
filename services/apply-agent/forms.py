@@ -27,10 +27,19 @@ EXTRACT_JS = r"""
   // custom radios and upload buttons hide the input but render its label.
   const labelEl = el => (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) || el.closest('label');
   const displayed = el => el.getClientRects().length > 0 || !!(labelEl(el) && labelEl(el).getClientRects().length > 0);
+  const GENERIC = /^(attach|upload|browse|choose( a)? file|select( a)? file|add( a)? file|drop .*)$/i;
+  const groupName = el => {
+    const grp = el.closest('[role=group], fieldset');
+    if (!grp) return '';
+    const by = grp.getAttribute('aria-labelledby');
+    return clean((by && document.getElementById(by) && text(document.getElementById(by))) ||
+                 grp.getAttribute('aria-label') || '');
+  };
   const labelFor = el => {
     if (el.id) {
       const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-      if (l && text(l)) return text(l);
+      // An upload labelled only "Attach" is named by its group ("Resume/CV*").
+      if (l && text(l)) return GENERIC.test(text(l)) && groupName(el) ? groupName(el) : text(l);
     }
     const wrap = el.closest('label');
     if (wrap && text(wrap)) return text(wrap);
@@ -105,6 +114,13 @@ EXTRACT_JS = r"""
     if (el.disabled) continue;
     const isChoice = type === 'radio' || type === 'checkbox';
     if (!displayed(el)) continue;
+    // Hidden helpers no person can type into (custom dropdowns' "required" input for validation).
+    if (!isChoice && type !== 'file' && el.getAttribute('aria-hidden') === 'true') continue;
+    // Site chrome and search, not the application: a careers site's job search or header box.
+    if (el.closest('[role=search], header, nav, [role=banner], [role=navigation]')) continue;
+    if (/\bsearch\b|keyword/i.test([el.getAttribute('aria-label'), el.placeholder, el.name,
+                                     el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.innerText]
+                                    .filter(Boolean).join(' '))) continue;
     if (!isChoice && type !== 'file' && !shown(el)) continue;
     const named = el.name ? scope.querySelectorAll(`input[type=${type}][name="${CSS.escape(el.name)}"]`) : [];
     if (type === 'radio' || (type === 'checkbox' && named.length > 1)) {
@@ -132,6 +148,7 @@ EXTRACT_JS = r"""
     const d = {id, type, label, required: el.required || el.getAttribute('aria-required') === 'true'
                                           || /\*\s*$|\(required\)/i.test(label),
                combobox: el.getAttribute('role') === 'combobox' || el.hasAttribute('aria-autocomplete'),
+               groupRequired: !!el.closest('[role=group][aria-required=true], fieldset[aria-required=true]'),
                value: type === 'checkbox' ? el.checked : (el.value || null),
                maxlength: el.maxLength > 0 ? el.maxLength : null};
     if (type === 'file') { d.value = null; d.accept = el.accept || null; }
@@ -211,6 +228,8 @@ def extract_fields(page, root=None, probe=False):
     options, so it can be answered like a normal dropdown (company portals; slower)."""
     fields = page.evaluate(EXTRACT_JS, root) + page.evaluate(BUTTON_CHOICES_JS, root)
     for f in fields:
+        if f.pop("groupRequired", False) or re.search(r"\*\s*$", f["label"] or ""):
+            f["required"] = True
         f["label"] = clean_label(f["label"])
         f["key"] = normalize(f["label"])
         f["options"] = f.get("options")

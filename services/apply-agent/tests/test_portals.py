@@ -226,7 +226,11 @@ class EngineGapTests(unittest.TestCase):
         self.assertEqual(by["country"]["options"], ["Canada", "United States", "United Kingdom"])
         self.assertEqual(by["location city"]["type"], "text")           # a typeahead stays text
         self.assertTrue(by["location city"]["combobox"])
-        self.assertEqual(by["resume cv"]["type"], "file")               # named by its role=group
+        self.assertEqual(by["resume cv"]["type"], "file")               # named by its group, not "Attach"
+        self.assertTrue(by["resume cv"]["required"])                      # required by its group
+        self.assertNotIn("", by)                                          # hidden validation helper skipped
+        self.assertNotIn("search job title", by)                          # site search isn't the form
+        self.assertNotIn("search jobs", by)
 
     def test_wrong_dropdown_or_typeahead_value_is_an_error_not_a_guess(self):
         import forms

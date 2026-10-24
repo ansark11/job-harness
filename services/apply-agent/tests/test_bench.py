@@ -174,3 +174,24 @@ class ResolveTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MeasurementTests(unittest.TestCase):
+    """False negatives the first live benchmark reported on Engine's form."""
+
+    def test_reformatted_phone_counts_as_kept(self):
+        f = {"type": "tel", "label": "Phone"}
+        self.assertEqual(bench.verify(f, "4165550123", {"value": "(416) 555-0123"}, {"value": "(416) 555-0123"}),
+                         (True, None))
+        self.assertFalse(bench.verify(f, "4165550123", {"value": "(416) 555-9999"}, {})[0])
+
+    def test_dropdown_showing_a_shortened_choice_counts_as_picked(self):
+        f = {"type": "combo_select", "label": "Country", "combobox": True}
+        raw = {"value": "", "around": "Country* +1", "shown": "+1"}
+        self.assertEqual(bench.verify(f, "Canada +1", {"value": None}, raw), (True, None))
+        raw_wrong = {"value": "", "around": "Country* +44", "shown": "+44"}
+        self.assertFalse(bench.verify(f, "Canada +1", {"value": None}, raw_wrong)[0])
+
+    def test_preferred_name_isnt_answered_as_a_referral_source(self):
+        self.assertEqual(bench.persona_value({"type": "text", "label": "Preferred First Name"}), "Bench")
+        self.assertEqual(bench.persona_value({"type": "text", "label": "Referral source"}), "LinkedIn")

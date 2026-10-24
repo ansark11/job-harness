@@ -7,6 +7,9 @@
 <style>[hidden]{display:none!important} .menu{border:1px solid #ccc} .option{padding:2px}
   .sr{position:absolute;opacity:0;width:1px;height:1px}</style></head>
 <body>
+<!-- Site search on the same page: never part of the application. -->
+<div role="search"><input type="text" role="combobox" aria-label="Search job title"></div>
+<input type="text" placeholder="Search jobs">
 <form id="application" novalidate>
   <label for="first_name">First Name *</label><input id="first_name" type="text" aria-required="true">
   <label for="last_name">Last Name *</label><input id="last_name" type="text" aria-required="true">
@@ -15,15 +18,19 @@
   <label id="country-l" for="country">Country *</label>
   <div class="select"><div id="country-shown">Select...</div>
     <input id="country" type="text" role="combobox" aria-autocomplete="list" aria-labelledby="country-l" aria-required="true">
-    <div class="menu" role="listbox" id="country-menu" hidden></div></div>
+    <div class="menu" role="listbox" id="country-menu" hidden></div>
+    <!-- react-select's validation helper: hidden from people, never to be typed into. -->
+    <input required tabindex="-1" aria-hidden="true" class="requiredInput" value=""
+           style="opacity:0;position:absolute;width:20px;height:10px"></div>
 
   <label for="city">Location (City) *</label>
   <input id="city" type="text" role="combobox" aria-autocomplete="list" aria-required="true">
   <ul role="listbox" id="city-list" hidden></ul>
 
-  <div role="group" aria-label="Resume/CV*">
-    <span>Resume/CV*</span><button type="button" id="attach">Attach</button>
-    <input id="resume" type="file" class="sr">
+  <!-- As on Engine: the input's own label is a hidden "Attach"; its name is on the group. -->
+  <div role="group" aria-labelledby="resume-l" aria-required="true">
+    <div id="resume-l">Resume/CV<span>*</span></div><button type="button" id="attach">Attach</button>
+    <label class="sr" for="resume">Attach</label><input id="resume" type="file" class="sr">
   </div>
   <button type="submit">Submit application</button>
 </form>
