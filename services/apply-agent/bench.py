@@ -185,8 +185,17 @@ READBACK_JS = r"""
 INVALID_JS = r"""
 () => {
   const clean = s => (s || '').replace(/\s+/g, ' ').trim();
+  // A required checkbox list is satisfied by one tick, but the browser still flags each
+  // unticked sibling :invalid. Skip those when a box in the same group is ticked.
+  const groupTicked = el => {
+    if (el.type !== 'checkbox') return false;
+    const box = el.name ? document.querySelectorAll(`input[type=checkbox][name="${CSS.escape(el.name)}"]`)
+                        : (el.closest('fieldset, [role=group]') || el.parentElement).querySelectorAll('input[type=checkbox]');
+    return [...box].some(b => b.checked);
+  };
   const bad = [...document.querySelectorAll('input:invalid, select:invalid, textarea:invalid, [aria-invalid=true]')]
-    .filter(el => el.getClientRects().length || (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)));
+    .filter(el => el.getClientRects().length || (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)))
+    .filter(el => !groupTicked(el));
   return bad.map(el => {
     const l = el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
     return clean((l && l.innerText) || el.getAttribute('aria-label') || el.name || el.type).slice(0, 150);
@@ -372,6 +381,10 @@ def audit(page, target, out_dir, resume_pdf, blocker, pause=(0.1, 0.3), budget=1
         if early["status"] == "error" and signin_wall(page):
             res["opened"] = "needs_user"
             res["open_error"] = f"sign-in required before the form ({urlsplit(page.url).hostname})"
+        elif early["status"] == "error":
+            closed = closed_text(page)
+            if closed:
+                res["opened"], res["open_error"] = "closed", f"posting closed on the portal (\"{closed}\")"
         return finish(res, page, out_dir, t0)
     res["opened"] = "form"
 
@@ -460,8 +473,7 @@ def audit(page, target, out_dir, resume_pdf, blocker, pause=(0.1, 0.3), budget=1
 
     res.update(fields=rows, missed=census["missed"], uninspected_iframes=census["iframes"], census_scope=census["scope"],
                invalid_after_fill=page.evaluate(INVALID_JS), blocked_requests=blocker.blocked[:20])
-    res["submit_button"] = any(c.count() for c in (page.get_by_role("button", name=portals.SUBMIT),
-                                                   page.locator("[type=submit]")))
+    res["submit_button"] = portals.submit_control(page) is not None
     res["next_button"] = page.get_by_role("button", name=NEXT).count() > 0
     # An invisible reCAPTCHA usually lets a real browser through; only a visible challenge blocks.
     res["captcha"] = any(c.is_visible() for c in page.locator(portals.CAPTCHA).all())
@@ -470,6 +482,14 @@ def audit(page, target, out_dir, resume_pdf, blocker, pause=(0.1, 0.3), budget=1
 
 
 SIGNIN_PATH = re.compile(r"sign.?in|log.?in|/auth|identifier|account", re.I)
+
+
+def closed_text(page):
+    try:
+        m = CLOSED_PAGE.search(page.locator("body").inner_text(timeout=3000))
+    except Exception:
+        return None
+    return m.group(0) if m else None
 
 
 def signin_wall(page):
@@ -496,6 +516,8 @@ def score(res):
     """verdict: pass | risky | fail | manual | unreachable, with the reasons."""
     if res.get("opened") == "needs_user":
         return {"verdict": "manual", "reasons": [res.get("open_error") or "portal needs an account"]}
+    if res.get("opened") == "closed":
+        return {"verdict": "closed", "reasons": [res.get("open_error")]}
     if res.get("opened") != "form":
         return {"verdict": "unreachable", "reasons": [res.get("open_error") or res.get("opened") or "no form"]}
     fields = res.get("fields", [])
@@ -544,7 +566,11 @@ def load_cache(path=RESOLVED):
     return {k: v for k, v in cache.items() if v and not portals.LINKEDIN.search((urlsplit(v).hostname or "").lower())}
 
 
-CLOSED_ON_LINKEDIN = re.compile(r"no longer accepting applications|this job is no longer available", re.I)
+CLOSED_ON_LINKEDIN = re.compile(r"(no longer|not currently) accepting applications|this job is no longer available", re.I)
+# A portal page saying the posting is gone (Ashby: "Job not found").
+CLOSED_PAGE = re.compile(r"job (was )?not found|(no longer|not currently) accepting (applications|candidates)|"
+                         r"position has been filled|job (posting )?(is )?(closed|expired|no longer available)|"
+                         r"this (job|position|posting) (is )?no longer (available|open)", re.I)
 
 
 def linkedin_state(page):
@@ -622,7 +648,9 @@ def run_targets(targets, out, headless, run, browser=None):
     try:
         for i, t in enumerate(targets, 1):
             if not t.get("apply_url"):
-                results.append({**{k: t.get(k) for k in ("id", "company", "title")}, "verdict": "unresolved",
+                closed = "closed" in (t.get("resolve_reason") or "")
+                results.append({**{k: t.get(k) for k in ("id", "company", "title")},
+                                "verdict": "closed" if closed else "unresolved",
                                 "reasons": [t.get("resolve_reason") or "no portal URL (LinkedIn Apply not resolved)"],
                                 "ats": "unknown"})
                 continue
@@ -674,7 +702,7 @@ def summarize(results):
     for ats, c in sorted(by.items(), key=lambda kv: -sum(kv[1].values())):
         n = sum(c.values())
         rows.append({"ats": ats, "postings": n, **{v: c.get(v, 0) for v in
-                     ("pass", "risky", "fail", "manual", "unreachable", "unresolved")},
+                     ("pass", "risky", "fail", "manual", "unreachable", "closed", "unresolved")},
                      "pass_rate": round(c.get("pass", 0) / n, 2)})
     return {"postings": len(results), "by_ats": rows, "top_reasons": reasons.most_common(12),
             "verdicts": dict(Counter(r.get("verdict") for r in results))}
@@ -683,11 +711,12 @@ def summarize(results):
 def report_md(results, summary):
     lines = ["# Portal benchmark", "", f"{summary['postings']} postings · " +
              " · ".join(f"{v}: {n}" for v, n in summary["verdicts"].items()), "",
-             "## By portal", "", "| Portal | Postings | Pass | Risky | Fail | Manual | Unreachable | Unresolved |",
-             "|---|---|---|---|---|---|---|---|"]
+             "## By portal", "",
+             "| Portal | Postings | Pass | Risky | Fail | Manual | Unreachable | Closed | Unresolved |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for r in summary["by_ats"]:
         lines.append(f"| {r['ats']} | {r['postings']} | {r['pass']} | {r['risky']} | {r['fail']} | {r['manual']} | "
-                     f"{r['unreachable']} | {r['unresolved']} |")
+                     f"{r['unreachable']} | {r['closed']} | {r['unresolved']} |")
     lines += ["", "## Most common problems", ""] + [f"- {why} ({n})" for why, n in summary["top_reasons"]]
     lines += ["", "## Each posting", ""]
     for r in results:

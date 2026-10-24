@@ -230,6 +230,8 @@ class Phase0ReasonTests(unittest.TestCase):
             self.assertTrue(bench.signin_wall(page))
             page.set_content("<main><p>No longer accepting applications</p><button>Apply</button></main>")
             self.assertIn("closed", bench.linkedin_state(page))
+            page.set_content("<main><p>Not currently accepting applications</p></main>")   # Valon's wording
+            self.assertIn("closed", bench.linkedin_state(page))
             page.set_content("<main><button>Easy Apply</button></main>")
             self.assertIn("Easy Apply", bench.linkedin_state(page))
             page.set_content("<main><p>Senior PM</p></main>")
@@ -246,7 +248,7 @@ class Phase0ReasonTests(unittest.TestCase):
                                       "resolve_reason": "posting closed on LinkedIn (no longer accepting applications)"}],
                                     Path(tmp), True, Run())
         self.assertEqual((res[0]["verdict"], res[0]["reasons"]),
-                         ("unresolved", ["posting closed on LinkedIn (no longer accepting applications)"]))
+                         ("closed", ["posting closed on LinkedIn (no longer accepting applications)"]))
 
     def test_blocked_upload_counts_as_attached(self):
         class Run:
@@ -258,3 +260,26 @@ class Phase0ReasonTests(unittest.TestCase):
         self.assertEqual(resume["outcome"], "verified")
         self.assertIn("blocks the upload", resume["why"])
         self.assertTrue(resume["required"])
+
+
+class ClosedSubmitCheckboxTests(unittest.TestCase):
+    """Spot-check findings: Confluent's 'Job not found', NCC's Submit link, CoreWeave's checkbox list."""
+
+    class Run:
+        event = warn = lambda *a, **k: None              # noqa: E731
+
+    def audit(self, fixture):
+        with tempfile.TemporaryDirectory() as tmp:
+            return bench.run_targets([{"id": "1", "company": "Co", "title": "PM",
+                                       "apply_url": (FIX / fixture).as_uri()}], Path(tmp), True, self.Run())[0]
+
+    def test_closed_portal_page_is_its_own_verdict(self):
+        r = self.audit("closed_posting.html")
+        self.assertEqual(r["verdict"], "closed")
+        self.assertIn("job not found", r["reasons"][0].lower())
+
+    def test_submit_link_and_ticked_checkbox_group_pass(self):
+        r = self.audit("link_submit_checkboxes.html")
+        self.assertTrue(r["submit_button"])
+        self.assertEqual(r["invalid_after_fill"], [])
+        self.assertEqual(r["verdict"], "pass", r["reasons"])

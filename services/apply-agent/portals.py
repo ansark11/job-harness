@@ -175,6 +175,15 @@ EMAIL_FIELD = re.compile(r"e-?mail", re.I)
 RESUME_FIELD = re.compile(r"resume|r[ée]sum[ée]|\bcv\b|curriculum", re.I)
 
 
+def submit_control(page):
+    """The form's Submit control: a button, a submit input, or (JazzHR) a link named Submit."""
+    for cand in (page.get_by_role("button", name=SUBMIT), page.locator("[type=submit]"),
+                 page.get_by_role("link", name=SUBMIT)):
+        if cand.count():
+            return cand.first
+    return None
+
+
 def looks_like_application(fields):
     named = lambda f: f"{f['label']} {f.get('key', '')}"      # noqa: E731
     if any(f["type"] == "file" and RESUME_FIELD.search(named(f)) for f in fields):
@@ -349,11 +358,7 @@ class PortalWalk:
         return list(dict.fromkeys(e.inner_text().strip() for e in loc.all() if e.is_visible() and e.inner_text().strip()))
 
     def submit(self):
-        btn = None
-        for cand in (self.page.get_by_role("button", name=SUBMIT), self.page.locator("[type=submit]")):
-            if cand.count():
-                btn = cand.first
-                break
+        btn = submit_control(self.page)
         if btn is None:
             return self.report("error", error="no Submit button on the portal page")
         btn.click()

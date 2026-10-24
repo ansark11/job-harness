@@ -1,0 +1,15 @@
+<!doctype html>
+<!-- Like JazzHR (Submit is a link) and CoreWeave/Stripe (a required checkbox list where one tick is enough). -->
+<html><head><meta charset="utf-8"><title>Apply - Checkbox Co</title></head>
+<body>
+<form id="f" novalidate>
+  <label for="fn">First Name *</label><input id="fn" type="text" required>
+  <label for="em">Email *</label><input id="em" type="email" required>
+  <fieldset><legend>For which location are you applying? *</legend>
+    <label><input type="checkbox" name="loc" value="chi" required> Chicago, IL</label>
+    <label><input type="checkbox" name="loc" value="sea" required> Seattle, WA</label>
+    <label><input type="checkbox" name="loc" value="sf" required> San Francisco, CA</label>
+  </fieldset>
+  <a href="#" id="go" onclick="return false">Submit Application</a>
+</form>
+</body></html>
