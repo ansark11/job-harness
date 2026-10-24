@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Like Greenhouse/Ashby: reCAPTCHA Enterprise in invisible mode. The only visible frame is the
+     "protected by reCAPTCHA" badge; the challenge frame exists but is hidden until a submit. -->
+<html><head><meta charset="utf-8"><title>Apply - Badge Co</title></head>
+<body>
+<form novalidate>
+  <label for="fn">First Name *</label><input id="fn" type="text" required>
+  <label for="em">Email *</label><input id="em" type="email" required>
+  <button type="submit">Submit application</button>
+</form>
+<div class="grecaptcha-badge" style="width:256px;height:60px;position:fixed;bottom:14px;right:0">
+  <iframe title="reCAPTCHA" width="256" height="60" src="about:blank#https://www.recaptcha.net/recaptcha/enterprise/anchor?ar=1&k=x&size=invisible"></iframe>
+</div>
+<div style="visibility:hidden;position:absolute;top:-10000px">
+  <iframe title="recaptcha challenge expires in two minutes" width="400" height="580"
+          src="about:blank#https://www.recaptcha.net/recaptcha/enterprise/bframe?k=x"></iframe>
+</div>
+</body></html>

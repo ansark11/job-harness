@@ -18,8 +18,10 @@ For each target:
                  coverage    controls on the page the engine didn't find
                  fill        each field filled with FAKE test data, then read back
                  follow-ups  fields that only appear after an answer
-                 blockers    CAPTCHA, multi-page flow, no Submit button,
-                             fields the browser still marks invalid
+                 blockers    a CAPTCHA challenge on screen, multi-page flow, no
+                             Submit button, fields the browser still marks invalid
+                             (invisible reCAPTCHA, which only runs on submit, is a
+                             note, not a blocker)
 
 Safety: never clicks Submit. Uses a made-up test person and a placeholder PDF,
 never your answers or resume. While filling, requests that could send data
@@ -179,6 +181,39 @@ READBACK_JS = r"""
     if (v && clean(v.innerText)) shown = clean(v.innerText);
   }
   return {value: el.value ?? null, files: el.files ? el.files.length : null, around: around.slice(0, 500), shown};
+}
+"""
+
+CAPTCHA_JS = r"""
+() => {
+  // A CAPTCHA a person would have to solve now, versus one that only runs on submit.
+  // Invisible reCAPTCHA (Greenhouse, Ashby) shows a "protected by reCAPTCHA" badge and keeps a
+  // hidden challenge frame in the page; neither is a challenge until a submit is challenged.
+  const shown = el => {
+    const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+    if (r.width < 30 || r.height < 30 || s.visibility === 'hidden' || s.display === 'none') return false;
+    for (let n = el; n; n = n.parentElement) {
+      const c = getComputedStyle(n);
+      if (c.visibility === 'hidden' || c.display === 'none' || parseFloat(c.opacity || '1') < 0.1) return false;
+    }
+    return r.bottom > 0 && r.right > 0 && r.top < innerHeight * 50;   // not parked off-screen
+  };
+  const challenge = new Set(), onSubmit = new Set();
+  for (const f of document.querySelectorAll('iframe')) {
+    const src = f.getAttribute('src') || '', title = f.getAttribute('title') || '', both = src + ' ' + title;
+    const recaptcha = /recaptcha/i.test(both), hcaptcha = /hcaptcha/i.test(both),
+          turnstile = /challenges\.cloudflare\.com|turnstile/i.test(src);
+    if (!recaptcha && !hcaptcha && !turnstile) continue;
+    const invisible = /size=invisible/i.test(src) || !!f.closest('.grecaptcha-badge');
+    if (turnstile && shown(f)) challenge.add('Cloudflare Turnstile');
+    else if (recaptcha && /\/anchor/i.test(src) && !invisible && shown(f)) challenge.add('reCAPTCHA checkbox');
+    else if (recaptcha && /\/bframe/i.test(src) && shown(f)) challenge.add('reCAPTCHA image challenge');
+    else if (hcaptcha && /frame=checkbox/i.test(src) && shown(f)) challenge.add('hCaptcha checkbox');
+    else if (hcaptcha && /frame=challenge/i.test(src) && shown(f)) challenge.add('hCaptcha challenge');
+    else onSubmit.add(recaptcha ? 'reCAPTCHA' : hcaptcha ? 'hCaptcha' : 'Turnstile');
+  }
+  if (document.querySelector('.grecaptcha-badge, script[src*="recaptcha"][src*="render="]')) onSubmit.add('reCAPTCHA');
+  return {challenge: [...challenge], on_submit: [...onSubmit]};
 }
 """
 
@@ -475,8 +510,12 @@ def audit(page, target, out_dir, resume_pdf, blocker, pause=(0.1, 0.3), budget=1
                invalid_after_fill=page.evaluate(INVALID_JS), blocked_requests=blocker.blocked[:20])
     res["submit_button"] = portals.submit_control(page) is not None
     res["next_button"] = page.get_by_role("button", name=NEXT).count() > 0
-    # An invisible reCAPTCHA usually lets a real browser through; only a visible challenge blocks.
-    res["captcha"] = any(c.is_visible() for c in page.locator(portals.CAPTCHA).all())
+    # Only a challenge on screen now blocks a person; invisible reCAPTCHA runs on submit (never done here).
+    captcha = page.evaluate(CAPTCHA_JS)
+    res["captcha_challenge"], res["captcha_on_submit"] = captcha["challenge"], captcha["on_submit"]
+    if captcha["on_submit"] and not captcha["challenge"]:
+        res.setdefault("notes", []).append(f"{', '.join(captcha['on_submit'])} runs on submit (invisible; "
+                                           f"no challenge shown)")
     res["fill_passes"] = passes
     return finish(res, page, out_dir, t0)
 
@@ -542,8 +581,8 @@ def score(res):
         reasons.append("multi-page form (the portal agent handles one page)")
     elif not res.get("submit_button"):
         reasons.append("no Submit button found")
-    if res.get("captcha"):
-        reasons.append("CAPTCHA present")
+    if res.get("captcha_challenge"):
+        reasons.append(f"CAPTCHA challenge on the form ({', '.join(res['captcha_challenge'])})")
     if res.get("timed_out"):
         reasons.append("ran out of time (over 2 minutes on one form)")
     hard = missed_req or bad_req or res.get("invalid_after_fill") or \
@@ -724,6 +763,8 @@ def report_md(results, summary):
         lines.append(f"- **{r.get('verdict')}** on {r.get('ats')} · {r.get('apply_url') or 'no URL'}")
         for why in r.get("reasons", []):
             lines.append(f"  - {why}")
+        for note in r.get("notes", []):
+            lines.append(f"  - note: {note}")
         for m in r.get("missed", [])[:8]:
             lines.append(f"  - not found: {m.get('label') or '(no label)'} [{m.get('role') or m.get('tag')}"
                          f"{', required' if m.get('required') else ''}{', shadow DOM' if m.get('in_shadow') else ''}]")

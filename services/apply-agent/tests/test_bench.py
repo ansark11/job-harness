@@ -283,3 +283,29 @@ class ClosedSubmitCheckboxTests(unittest.TestCase):
         self.assertTrue(r["submit_button"])
         self.assertEqual(r["invalid_after_fill"], [])
         self.assertEqual(r["verdict"], "pass", r["reasons"])
+
+
+class CaptchaTests(unittest.TestCase):
+    """Invisible reCAPTCHA (a badge) runs on submit and isn't a blocker; a visible challenge is."""
+
+    class Run:
+        event = warn = lambda *a, **k: None              # noqa: E731
+
+    def audit(self, fixture):
+        with tempfile.TemporaryDirectory() as tmp:
+            return bench.run_targets([{"id": "1", "company": "Co", "title": "PM",
+                                       "apply_url": (FIX / fixture).as_uri()}], Path(tmp), True, self.Run())[0]
+
+    def test_badge_only_is_a_note_not_a_reason(self):
+        r = self.audit("captcha_badge_only.html")
+        self.assertEqual(r["captcha_challenge"], [])
+        self.assertIn("reCAPTCHA", r["captcha_on_submit"])
+        self.assertFalse(any("CAPTCHA" in why for why in r["reasons"]))
+        self.assertTrue(any("runs on submit" in n for n in r["notes"]))
+        self.assertEqual(r["verdict"], "pass", r["reasons"])
+
+    def test_visible_challenge_is_a_reason(self):
+        r = self.audit("captcha_challenge.html")
+        self.assertEqual(r["captcha_challenge"], ["reCAPTCHA checkbox"])
+        self.assertIn("CAPTCHA challenge on the form (reCAPTCHA checkbox)", r["reasons"])
+        self.assertEqual(r["verdict"], "risky")
