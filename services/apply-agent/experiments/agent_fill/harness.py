@@ -132,11 +132,15 @@ async def launch(headless=True):
     return pw, ctx, f"http://127.0.0.1:{port}", blocker
 
 
-def guard_tools(refusals):
-    """browser-use Tools with click/input/send_keys/select wrapped by the action guard."""
+def guard_tools(refusals, enabled=True):
+    """browser-use Tools with click/input/send_keys/select wrapped by the action guard.
+    enabled=False (safety test only) leaves the network blocker as the only layer."""
     from browser_use import Tools
     from browser_use.agent.views import ActionResult
     tools = Tools()
+    if not enabled:
+        tools.set_coordinate_clicking(False)
+        return tools
     actions = tools.registry.registry.actions
 
     async def describe(browser_session, index):
@@ -184,7 +188,7 @@ def guard_tools(refusals):
     return tools
 
 
-async def run_agent(task, cdp_url, resume_path, refusals, max_steps=MAX_STEPS, time_limit=TIME_LIMIT):
+async def run_agent(task, cdp_url, resume_path, refusals, max_steps=MAX_STEPS, time_limit=TIME_LIMIT, guard=True):
     """Run browser-use on the attached browser. Returns a dict of what happened.
     Normally called inside a child process (run_one.py) via run_isolated()."""
     from browser_use import Agent, Browser
@@ -194,7 +198,7 @@ async def run_agent(task, cdp_url, resume_path, refusals, max_steps=MAX_STEPS, t
         return {"final_report": None, "done": False, "steps": 0, "seconds": 0, "timed_out": False,
                 "config_error": config_error, "tokens_in": None, "tokens_out": None, "cost_usd": None, "urls": []}
     browser = Browser(cdp_url=cdp_url, keep_alive=True)
-    agent = Agent(task=task, llm=model, browser=browser, tools=guard_tools(refusals),
+    agent = Agent(task=task, llm=model, browser=browser, tools=guard_tools(refusals, enabled=guard),
                   available_file_paths=[str(resume_path)], calculate_cost=True)
     stop_reason = []
 

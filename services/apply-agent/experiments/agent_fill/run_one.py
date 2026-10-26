@@ -21,7 +21,8 @@ async def main(job_path, result_path):
     try:
         result = await harness.run_agent(job["task"], job["cdp_url"], job["resume"], refusals,
                                          max_steps=job.get("max_steps", harness.MAX_STEPS),
-                                         time_limit=job.get("time_limit", harness.TIME_LIMIT))
+                                         time_limit=job.get("time_limit", harness.TIME_LIMIT),
+                                         guard=job.get("guard", True))
     except Exception as e:
         result = {"error": f"{type(e).__name__}: {e}"[:500]}
     harness.dump(Path(result_path), {**result, "refusals": refusals})
