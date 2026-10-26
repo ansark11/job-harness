@@ -3,3 +3,4 @@ data/
 .env
 __pycache__/
 targets.json
+claude_in_chrome.md
