@@ -25,12 +25,16 @@ import bench  # noqa: E402
 
 LATEST = AGENT.parents[1] / "workflows" / "portal_bench" / "data" / "20261024T175043" / "bench" / "results.json"
 CONTROLS = ("Coinflow", "Marqeta", "Affirm")      # stable passes on three portal setups (Ashby x2, Greenhouse)
+# Added at the user's request: Veeva passed in the full run but its career-site navigation failed on a
+# recheck (flaky); NCC shows a real, visible reCAPTCHA checkbox (the agent should stop, not get past it).
+EXTRA = {"Veeva Systems": "flaky navigation", "NCC": "visible CAPTCHA"}
 
 
 def pick(results):
     targets = [dict(t, role="target") for t in results if t.get("verdict") in ("fail", "unreachable")]
     controls = [dict(t, role="control") for t in results if t.get("company") in CONTROLS]
-    return targets + controls
+    extra = [dict(t, role=f"target ({EXTRA[t['company']]})") for t in results if t.get("company") in EXTRA]
+    return targets + extra + controls
 
 
 def still_open(page, url):
@@ -62,7 +66,7 @@ def main(argv=None):
             ctx = browser.new_context(viewport={"width": 1280, "height": 900})
             ok, note = still_open(ctx.new_page(), t["apply_url"])
             ctx.close()
-            print(f"{t['role']:<8} {t['verdict']:<12} {t.get('ats', ''):<20} {t['company'][:22]:<22} {note}")
+            print(f"{t['role'][:24]:<24} {t['verdict']:<12} {t.get('ats', ''):<20} {t['company'][:22]:<22} {note}")
             if ok:
                 out.append({k: t.get(k) for k in ("id", "company", "title", "ats", "apply_url", "role")} |
                            {"rules_verdict": t["verdict"], "rules_reasons": t.get("reasons", []),

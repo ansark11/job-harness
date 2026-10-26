@@ -1,0 +1,71 @@
+{
+  "_about": "FAKE answer packet for the agent-fill experiment (docs/agent-fill-experiment.md, Step 2). Same made-up person as bench.PERSONA, plus screening answers for someone based in Toronto. Never the user's real data.",
+  "rules": [
+    "Use only the values in this packet. Never invent a value.",
+    "If a question isn't covered, choose a 'prefer not to say' or 'decline to answer' option if one exists; otherwise leave it blank.",
+    "List every question you left blank or declined in your final report under 'unanswered'.",
+    "For dropdowns and radio buttons, choose the option that means the same as the packet value.",
+    "Never click Submit, Send, Sign in, Log in, Create account or Register, and never type a password."
+  ],
+  "contact": {
+    "first_name": "Bench",
+    "last_name": "Tester",
+    "full_name": "Bench Tester",
+    "preferred_name": "Bench",
+    "email": "bench.tester@example.com",
+    "phone": "416-555-0123",
+    "phone_country": "Canada (+1)",
+    "city": "Toronto",
+    "location": "Toronto, Ontario, Canada",
+    "province_or_state": "Ontario",
+    "country": "Canada",
+    "postal_code": "M5V 2T6",
+    "linkedin_url": "https://www.linkedin.com/in/bench-tester-example",
+    "website_url": "https://example.com"
+  },
+  "background": {
+    "current_company": "Example Corp",
+    "current_title": "Product Manager",
+    "years_of_experience": "8",
+    "years_of_product_management_experience": "8",
+    "school": "University of Toronto",
+    "degree": "Bachelor's Degree",
+    "field_of_study": "Economics",
+    "graduation_year": "2016"
+  },
+  "work_authorization": {
+    "authorized_to_work_in_canada": "Yes",
+    "requires_sponsorship_in_canada": "No",
+    "authorized_to_work_in_the_united_states": "No",
+    "requires_sponsorship_in_the_united_states": "Yes",
+    "over_18": "Yes"
+  },
+  "logistics": {
+    "salary_expectation": "200000 CAD per year",
+    "notice_period": "4 weeks",
+    "earliest_start_date": "4 weeks after an offer",
+    "willing_to_relocate": "No",
+    "open_to_hybrid_or_remote": "Yes",
+    "previously_employed_by_this_company": "No",
+    "how_did_you_hear_about_us": "LinkedIn",
+    "opt_in_to_text_or_whatsapp_messages": "No",
+    "join_talent_community_or_newsletter": "No"
+  },
+  "self_identification": {
+    "gender": "Prefer not to say",
+    "pronouns": "Prefer not to say",
+    "race_or_ethnicity": "Prefer not to say",
+    "hispanic_or_latino": "Prefer not to say",
+    "veteran_status": "Prefer not to say",
+    "disability_status": "Prefer not to say",
+    "lgbtq": "Prefer not to say"
+  },
+  "long_form": {
+    "why_this_role": "I enjoy building products that make complex financial and operational workflows simple for customers. This role's focus on measurable outcomes and close work with engineering and design matches how I like to work, and I'd bring experience shipping customer-facing products end to end.",
+    "cover_letter": "Leave blank unless required; if required, use the why_this_role text."
+  },
+  "files": {
+    "resume": "data/Test_Resume.pdf",
+    "_resume_note": "The benchmark's placeholder PDF ('Automated form check. Not a real resume.'), created by the runner."
+  }
+}
