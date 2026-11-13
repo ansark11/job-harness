@@ -61,7 +61,7 @@ Read `CLAUDE.md` first and follow its rules throughout. In particular:
 - Fixtures before live calls. Every phase ships with tests. `./scripts/test.sh` must pass.
 - `scripts/runlog.py` and `scripts/llm.py` are masters; copy identically where used.
 - Log decisions, not just outcomes, through `runlog.py`.
-- Also read `~/.claude/plans/i-m-looking-to-build-sleepy-floyd.md` (the original design).
+- Also read `docs/plans/build-plan.md` (the original design).
   Where this plan conflicts with it, stop and ask the user.
 
 Work phase by phase. At the end of each phase:
@@ -313,7 +313,7 @@ The extension and web app need HTTP.
 
 **Check the original design first.** `CLAUDE.md` says the web app sits on "tracker's API",
 and `services/tracker/store.py` says "The CLI (and later the API) are thin layers on these
-functions". Read `~/.claude/plans/i-m-looking-to-build-sleepy-floyd.md` for the intended
+functions". Read `docs/plans/build-plan.md` for the intended
 API design. Proposed split, to confirm with the user:
 
 - **Tracker API** (`services/tracker/api.py`): thin HTTP layer over `store.py`,

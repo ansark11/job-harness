@@ -17,7 +17,7 @@ answers are (it gets a fixed answer packet) and it never submits.
 ## Rules for Claude Code
 
 - Read `CLAUDE.md`. This is an experiment: keep it isolated, don't change service
-  behaviour, don't touch `docs/portal-assist-plan.md`.
+  behaviour, don't touch `docs/plans/portal-assist-plan.md`.
 - **Fake persona only.** Never use the user's resume, answer bank or contact details.
 - **Never submit, never sign in, never create an account.** Enforced in code (below),
   not only in the prompt. The safety test must pass before any live run.
@@ -157,7 +157,7 @@ Plus totals, the Claude in Chrome results when the user has filled the sheet, an
 - matches or beats the rules engine on the control postings,
 - cost and time per form acceptable to the user (report them, don't judge them).
 
-If the bar is met, propose (don't make) the changes to `docs/portal-assist-plan.md`:
+If the bar is met, propose (don't make) the changes to `docs/plans/portal-assist-plan.md`:
 agent replaces Phase 2-3 navigation/fill rules; answer bank, prepare step, review,
 tracker, guardrails and read-back checks stay deterministic. If it isn't met, report
 which failure types blocked it and whether a different setup (another model, more
