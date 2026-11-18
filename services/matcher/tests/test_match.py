@@ -182,8 +182,8 @@ class CliTests(unittest.TestCase):
             args = [str(t / "postings.json"), "--criteria", str(t / "criteria.json"),
                     "--resume", str(t / "resume.txt"), "--out", str(t / "out.json")]
             with mock.patch.object(match, "CACHE_PATH", t / "cache.json"), redirect_stderr(io.StringIO()):
-                self.assertEqual(match.main(args, post=model), 0)
-                self.assertEqual(match.main(args, post=model), 0)
+                self.assertEqual(match.main(args, post=model, now=NOW), 0)
+                self.assertEqual(match.main(args, post=model, now=NOW), 0)
             out = json.loads((t / "out.json").read_text())
             self.assertEqual([m["id"] for m in out["matches"]], ["1"])
             self.assertEqual(len(model.calls), 1)                     # second run served from cache
@@ -197,7 +197,7 @@ class CliTests(unittest.TestCase):
             (t / "r.txt").write_text("r")
             with redirect_stderr(io.StringIO()):
                 code = match.main([str(t / "p.json"), "--criteria", str(t / "c.json"), "--resume", str(t / "r.txt"),
-                                   "--out", str(t / "o.json"), "--no-cache"], post=model)
+                                   "--out", str(t / "o.json"), "--no-cache"], post=model, now=NOW)
             self.assertEqual(code, 2)
 
 
