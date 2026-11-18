@@ -141,7 +141,7 @@ class _NullRun:
     warn = event
 
 
-def main(argv=None, post=None):
+def main(argv=None, post=None, now=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("postings", help="job-search output JSON")
     ap.add_argument("--criteria", required=True, help="criteria JSON; its 'match' section is used")
@@ -158,7 +158,7 @@ def main(argv=None, post=None):
             sys.exit(f"{args.criteria} has no 'match' section (see criteria.example.json)")
         cfg = criteria["match"]
         resume = Path(args.resume).read_text()
-        now = datetime.now(timezone.utc)
+        now = now or datetime.now(timezone.utc)
         cache = {} if args.no_cache else load_cache(CACHE_PATH)
 
         saver = None if args.no_cache else (lambda c: save_cache(CACHE_PATH, c))
