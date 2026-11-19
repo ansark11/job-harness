@@ -25,3 +25,4 @@ __pycache__/
 
 # Personal search criteria (comp floor, locations); criteria.example.json is the template
 criteria.json
+CLAUDE.local.md
